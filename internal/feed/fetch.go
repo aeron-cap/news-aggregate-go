@@ -2,7 +2,6 @@ package feed
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -20,6 +19,9 @@ type Article struct {
 	Authors []Person
 	Link    string
 	Date    string
+	RelevanceScore float64
+	RecencyScore float64
+	WeightedScore	float64
 }
 
 // XML Feeds for Tech News, Community Aggregators, and Curator Blogs
@@ -65,7 +67,7 @@ func Fetch() ([]Article, error) {
 	fp := gofeed.NewParser()
 	// for reddit
 	fp.UserAgent = "desktop:com.example.feedreader:v1.0.0 (by /u/A3ron)"
-	
+
 	feed, err := fp.ParseURL("https://lobste.rs/rss")
 	if err != nil {
 		fmt.Println("Error fetching feed:", err)
@@ -78,7 +80,7 @@ func Fetch() ([]Article, error) {
 		return nil, err
 	}
 
-	return sortByDate("asc", articles), nil
+	return BuildFeed(articles), nil 
 }
 
 func generateArticles(feed *gofeed.Feed) ([]Article, error) {
@@ -154,24 +156,9 @@ func getLink(feed *gofeed.Item) string {
 }
 
 func getDate(feed *gofeed.Item) string {
-	return feed.PublishedParsed.UTC().Format(time.RFC3339)
-}
-
-func sortByDate(by string, articles []Article) []Article {
-	switch (by) {
-	case "asc":
-		sort.Slice(articles, func (i, j int) bool {
-			return articles[j].Date < articles[i].Date 
-		})
-	case "desc":
-		sort.Slice(articles, func (i, j int) bool {
-			return articles[j].Date > articles[i].Date 
-		})
-	default:
-		sort.Slice(articles, func (i, j int) bool {
-			return articles[j].Date < articles[i].Date 
-		})
+	if feed.UpdatedParsed == nil {
+		return feed.PublishedParsed.UTC().Format(time.RFC3339)
 	}
-
-	return articles
+	
+	return feed.UpdatedParsed.UTC().Format(time.RFC3339)
 }
