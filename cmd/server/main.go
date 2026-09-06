@@ -27,9 +27,7 @@ func main() {
 }
 
 // TODOs
-// get date from sources
-// find way more sources to pull from
-// way to loop thru sources and get by source; sort by date
+// way to loop thru sources and get by source
 // i think we cant get the html to parse, so we just need headline + other info and a link to main source
 // spin up the db to store articles 
 // setup interests 
