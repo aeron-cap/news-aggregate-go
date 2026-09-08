@@ -14,73 +14,80 @@ type Person struct {
 }
 
 type Article struct {
-	Title   string
-	Content string
-	Authors []Person
-	Link    string
-	Date    string
+	Title          string
+	Content        string
+	Authors        []Person
+	Link           string
+	Date           string
 	RelevanceScore float64
-	RecencyScore float64
-	WeightedScore	float64
+	RecencyScore   float64
+	WeightedScore  float64
 }
 
-// XML Feeds for Tech News, Community Aggregators, and Curator Blogs
-// Community Aggregators (XML):
-// - Lobste.rs (RSS 2.0)
-//   https://lobste.rs/rss
-// - Hacker News via HNRSS - Top Submissions (RSS 2.0)
-//   https://hnrss.org/frontpage
-// - Hacker News via HNRSS - Top Submissions (Atom 1.0)
-//   https://hnrss.org/frontpage.atom
-// - Hacker News via HNRSS - Show HN / Personal Projects (RSS 2.0)
-//   https://hnrss.org/show?points=25
-// - Hacker News Official (RSS 2.0)
-//   https://news.ycombinator.com/rss
-// - Reddit r/programming (RSS 2.0 / Atom)
-//   https://www.reddit.com/r/programming/.rss
-// - Reddit r/golang (RSS 2.0 / Atom)
-//   https://www.reddit.com/r/golang/.rss
-// - Reddit r/selfhosted (RSS 2.0 / Atom)
-//   https://www.reddit.com/r/selfhosted/.rss
-// - DEV Community (RSS 2.0)
-//   https://dev.to/feed
-//
-// Curator Blogs & Linklogs (XML):
-// - Simon Willison - All Posts (Atom 1.0)
-//   https://simonwillison.net/atom/everything/
-// - Simon Willison - Links Only (Atom 1.0)
-//   https://simonwillison.net/atom/links/
-// - Daring Fireball (RSS 2.0)
-//   https://daringfireball.net/feeds/main
-// - Waxy.org (RSS 2.0)
-//   https://waxy.org/feed/
-// - Kottke.org (RSS 2.0)
-//   https://feeds.kottke.org/main
-// - Dan Luu (Atom 1.0)
-//   https://danluu.com/atom.xml
-// - Eli Bendersky (Atom 1.0)
-//   https://eli.thegreenplace.net/feeds/all.atom.xml
-// - Brandur Leach (Atom 1.0)
-//   https://brandur.org/articles.atom
+var sources = []string{
+	// "https://lobste.rs/rss",
+	// "https://hnrss.org/frontpage",
+	// "https://hnrss.org/frontpage.atom",
+	// "https://hnrss.org/show?points=25",
+	// "https://news.ycombinator.com/rss",
+	// "https://dev.to/feed",
+	// "https://simonwillison.net/atom/everything/",
+	// "https://simonwillison.net/atom/links/",
+	// "https://daringfireball.net/feeds/main",
+	// "https://waxy.org/feed/",
+	// "https://feeds.kottke.org/main",
+	// "https://danluu.com/atom.xml",
+	// "https://eli.thegreenplace.net/feeds/all.atom.xml",
+	// "https://brandur.org/articles.atom",
+}
 
 func Fetch() ([]Article, error) {
-	fp := gofeed.NewParser()
-	// for reddit
-	fp.UserAgent = "desktop:com.example.feedreader:v1.0.0 (by /u/A3ron)"
+	const workers = 4
+	sc := make(chan string)
+	feeds := make(chan *gofeed.Feed)
+	workersDone := make(chan bool)
+	done := make(chan bool)
+	articles := []Article{}
 
-	feed, err := fp.ParseURL("https://lobste.rs/rss")
-	if err != nil {
-		fmt.Println("Error fetching feed:", err)
-		return nil, err
+	for i := 0; i < workers; i++ {
+		go func() {
+			fp := gofeed.NewParser()
+			for s := range sc {
+				feed, err := fp.ParseURL(s)
+				if err != nil {
+					continue
+				}
+				feeds <- feed
+			}
+			workersDone <- true
+		}()
 	}
 
-	articles, err := generateArticles(feed)
-	if err != nil {
-		fmt.Println("Error generating articles:", err)
-		return nil, err
-	}
+	go func() {
+		for i := 0; i < workers; i++ {
+			<-workersDone
+		}
+		close(feeds)
+	}()
 
-	return BuildFeed(articles), nil 
+	go func() {
+		for f := range feeds {
+			feedOutput, err := generateArticles(f)
+			if err != nil {
+				continue
+			}
+			articles = append(articles, feedOutput...)
+		}
+		close(done)
+	}()
+
+	for _, source := range sources {
+		sc <- source
+	}
+	close(sc)
+
+	<-done
+	return BuildFeed(articles), nil
 }
 
 func generateArticles(feed *gofeed.Feed) ([]Article, error) {
@@ -156,9 +163,13 @@ func getLink(feed *gofeed.Item) string {
 }
 
 func getDate(feed *gofeed.Item) string {
-	if feed.UpdatedParsed == nil {
+	if feed.UpdatedParsed != nil {
+		return feed.UpdatedParsed.UTC().Format(time.RFC3339)
+	}
+
+	if feed.PublishedParsed == nil {
 		return feed.PublishedParsed.UTC().Format(time.RFC3339)
 	}
-	
-	return feed.UpdatedParsed.UTC().Format(time.RFC3339)
+
+	return time.Now().UTC().Format(time.RFC3339)
 }

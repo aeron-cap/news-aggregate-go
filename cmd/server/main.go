@@ -27,7 +27,7 @@ func main() {
 }
 
 // TODOs
-// way to loop thru sources and get by source
+// add timeout to limit time i have to wait for the feeds to fetch
 // i think we cant get the html to parse, so we just need headline + other info and a link to main source
 // spin up the db to store articles 
 // setup interests 
