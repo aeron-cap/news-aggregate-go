@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -25,35 +26,38 @@ type Article struct {
 }
 
 var sources = []string{
-	// "https://lobste.rs/rss",
-	// "https://hnrss.org/frontpage",
-	// "https://hnrss.org/frontpage.atom",
-	// "https://hnrss.org/show?points=25",
-	// "https://news.ycombinator.com/rss",
-	// "https://dev.to/feed",
-	// "https://simonwillison.net/atom/everything/",
-	// "https://simonwillison.net/atom/links/",
-	// "https://daringfireball.net/feeds/main",
-	// "https://waxy.org/feed/",
-	// "https://feeds.kottke.org/main",
-	// "https://danluu.com/atom.xml",
-	// "https://eli.thegreenplace.net/feeds/all.atom.xml",
-	// "https://brandur.org/articles.atom",
+	"https://lobste.rs/rss",
+	"https://hnrss.org/frontpage",
+	"https://hnrss.org/frontpage.atom",
+	"https://hnrss.org/show?points=25",
+	"https://news.ycombinator.com/rss",
+	"https://dev.to/feed",
+	"https://simonwillison.net/atom/everything/",
+	"https://simonwillison.net/atom/links/",
+	"https://daringfireball.net/feeds/main",
+	"https://waxy.org/feed/",
+	"https://feeds.kottke.org/main",
+	"https://danluu.com/atom.xml",
+	"https://eli.thegreenplace.net/feeds/all.atom.xml",
+	"https://brandur.org/articles.atom",
 }
 
 func Fetch() ([]Article, error) {
-	const workers = 4
+	var workers = len(sources) + 1
 	sc := make(chan string)
 	feeds := make(chan *gofeed.Feed)
 	workersDone := make(chan bool)
 	done := make(chan bool)
 	articles := []Article{}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	
 	for i := 0; i < workers; i++ {
+		fp := gofeed.NewParser()
 		go func() {
-			fp := gofeed.NewParser()
 			for s := range sc {
-				feed, err := fp.ParseURL(s)
+				feed, err := fp.ParseURLWithContext(s, ctx)
 				if err != nil {
 					continue
 				}
@@ -167,7 +171,7 @@ func getDate(feed *gofeed.Item) string {
 		return feed.UpdatedParsed.UTC().Format(time.RFC3339)
 	}
 
-	if feed.PublishedParsed == nil {
+	if feed.PublishedParsed != nil {
 		return feed.PublishedParsed.UTC().Format(time.RFC3339)
 	}
 
