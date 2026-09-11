@@ -42,5 +42,7 @@ func BuildFeed(articles []Article) []Article {
 		articles[i].WeightedScore = weightedScore(articles[i])
 	}
 
-	return sortByWeightedScore("desc", articles)
+	// date can be edited using frontend later
+	articles = filterOldArticles(articles, 1, 0, 0)
+	return giveTopArticles(10, articles)
 }

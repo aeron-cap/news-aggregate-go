@@ -21,6 +21,6 @@ func getFeeds(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, article := range articles {
-		w.Write([]byte(article.Title + "\n" + article.Link + "\n\n" + article.Date + "\n\n" + fmt.Sprintf("%f", article.WeightedScore) + "\n\n"))
+		w.Write([]byte(article.Title + "\n" + article.Link + "\n\n" + article.Date + "\n\n" + fmt.Sprintf("%f = %f + %f", article.WeightedScore, article.RelevanceScore, article.RecencyScore) + "\n\n"))
 	}
 }

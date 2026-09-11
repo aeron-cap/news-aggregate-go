@@ -1,6 +1,9 @@
 package feed
 
-import "sort"
+import (
+	"sort"
+	"time"
+)
 
 func sortByDate(by string, articles []Article) []Article {
 	switch by {
@@ -38,4 +41,32 @@ func sortByWeightedScore(by string, articles []Article) []Article {
 	}
 
 	return articles
+}
+
+func giveTopArticles(num int, articles []Article) []Article {
+	articles = sortByWeightedScore("desc", articles)
+	
+	if num > len(articles) {
+		return articles
+	}
+
+	return articles[:num]
+}
+
+func filterOldArticles(articles []Article, years, month, days int ) []Article {
+	cutoff := time.Now().AddDate(-years, -month, -days)
+	filtered := []Article{}
+	for _, article := range articles {
+		if article.Date != "" {
+			articleDate, err := time.Parse(time.RFC3339, article.Date)
+			if err != nil {
+				continue
+			}
+			if articleDate.After(cutoff) {
+				filtered = append(filtered, article)
+			}
+		}
+	}
+
+	return filtered
 }

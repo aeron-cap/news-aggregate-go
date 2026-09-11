@@ -17,8 +17,8 @@ const (
 	contentWeight = 2.0
 	urlWeight     = 1.0
 	halfLifeHours = 24.0
-	relevanceW    = 0.7
-	recencyW      = 0.3
+	relevanceW    = 0.6
+	recencyW      = 0.4
 )
 
 func NewInterests(keywords []string) Interests {
