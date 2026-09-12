@@ -12,7 +12,7 @@ func health(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("OK"))
 }
 
-func getFeeds(w http.ResponseWriter, r *http.Request) {
+func (a *app) getFeeds(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	articles, err := feed.Fetch()
 	if err != nil {
