@@ -26,23 +26,6 @@ type Article struct {
 	WeightedScore  float64
 }
 
-var sources = []string{
-	"https://lobste.rs/rss",
-	"https://hnrss.org/frontpage",
-	"https://hnrss.org/frontpage.atom",
-	"https://hnrss.org/show?points=25",
-	"https://news.ycombinator.com/rss",
-	"https://dev.to/feed",
-	"https://simonwillison.net/atom/everything/",
-	"https://simonwillison.net/atom/links/",
-	"https://daringfireball.net/feeds/main",
-	"https://waxy.org/feed/",
-	"https://feeds.kottke.org/main",
-	"https://danluu.com/atom.xml",
-	"https://eli.thegreenplace.net/feeds/all.atom.xml",
-	"https://brandur.org/articles.atom",
-}
-
 func Fetch(store *database.Store) ([]Article, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

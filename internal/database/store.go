@@ -65,10 +65,56 @@ func (s *Store) InsertSources(ctx context.Context, sources []Source) error {
 }
 
 // Delete from Sources Table
-//
-// Get All from Interests Table
+
+type Interest struct {
+	ID      int64  `json:"id"`
+	Keyword string `json:"keyword"`
+	Weight  string `json:"weight"`
+}
+
+func (s *Store) GetInterests(ctx context.Context) ([]Interest, error) {
+	const stmt = `SELECT id, keyword, weight FROM interests`
+
+	rows, err := s.db.QueryContext(ctx, stmt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	interests := []Interest{}
+	for rows.Next() {
+		var interest Interest
+		if err := rows.Scan(&interest.ID, &interest.Keyword, &interest.Weight); err != nil {
+			return nil, err
+		}
+		interests = append(interests, interest)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return interests, nil
+}
+
 // Get from Interests Table by ID
 // Write to Interests Table
+func (s *Store) InsertInterests(ctx context.Context, interests []Interest) error {
+	stmt, err := s.db.PrepareContext(ctx, `INSERT INTO interests (keyword, weight) VALUES (?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, interest := range interests {
+		if _, err := stmt.ExecContext(ctx, interest.Keyword, interest.Weight); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Delete from Interests Table
 //
 // Get All from Articles Table
