@@ -62,3 +62,4 @@ func main() {
 // manage sources
 // i think we cant get the html to parse, so we just need headline + other info and a link to main source
 // interaction with fetched articles affect algorithm
+// add blacklist
