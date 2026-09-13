@@ -14,26 +14,25 @@ func NewStore(db *sql.DB) *Store {
 }
 
 type Source struct {
-	ID           int64  `json:"id"`
-	Name         string `json:"name"`
-	FeedURL      string `json:"feed_url"`
-	IsActive     bool   `json:"is_active"`
-	LastModified string `json:"last_modified"`
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	URL      string `json:"url"`
+	IsActive bool   `json:"is_active"`
 }
 
 func (s *Store) GetSources(ctx context.Context) ([]Source, error) {
-	const stmt = `SELECT id, name, feed_url, is_active FROM sources`
+	const stmt = `SELECT id, name, url, is_active FROM sources WHERE is_active = 1`
 
 	rows, err := s.db.QueryContext(ctx, stmt)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	sources := []Source{}
 	for rows.Next() {
 		var src Source
-		if err := rows.Scan(&src.ID, &src.Name, &src.FeedURL, &src.IsActive); err != nil {
+		if err := rows.Scan(&src.ID, &src.Name, &src.URL, &src.IsActive); err != nil {
 			return nil, err
 		}
 		sources = append(sources, src)
@@ -46,16 +45,32 @@ func (s *Store) GetSources(ctx context.Context) ([]Source, error) {
 	return sources, nil
 }
 
-// TODO: 
-// Get from Sources Table by ID 
+// TODO:
+// Get from Sources Table by ID
 // Write to Sources Table
+func (s *Store) InsertSources(ctx context.Context, sources []Source) error {
+	stmt, err := s.db.PrepareContext(ctx, `INSERT INTO sources (name, url, is_active) VALUES (?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, src := range sources {
+		if _, err := stmt.ExecContext(ctx, src.Name, src.URL, src.IsActive); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Delete from Sources Table
-// 
+//
 // Get All from Interests Table
 // Get from Interests Table by ID
 // Write to Interests Table
 // Delete from Interests Table
-// 
+//
 // Get All from Articles Table
 // Get from Articles Table by ID
 // Write to Articles Table

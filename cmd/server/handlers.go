@@ -14,7 +14,7 @@ func health(w http.ResponseWriter, r *http.Request) {
 
 func (a *app) getFeeds(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	articles, err := feed.Fetch()
+	articles, err := feed.Fetch(a.store)
 	if err != nil {
 		http.Error(w, "Failed to fetch feeds", http.StatusInternalServerError)
 		return

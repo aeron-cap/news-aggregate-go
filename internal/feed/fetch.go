@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aeron-cap/news-aggregator/internal/database"
 	"github.com/mmcdole/gofeed"
 	"golang.org/x/net/html"
 )
@@ -42,7 +43,15 @@ var sources = []string{
 	"https://brandur.org/articles.atom",
 }
 
-func Fetch() ([]Article, error) {
+func Fetch(store *database.Store) ([]Article, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	
+	sources, err := store.GetSources(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get sources: %w", err)
+	}
+
 	var workers = len(sources) + 1
 	sc := make(chan string)
 	feeds := make(chan *gofeed.Feed)
@@ -50,9 +59,6 @@ func Fetch() ([]Article, error) {
 	done := make(chan bool)
 	articles := []Article{}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	
 	for i := 0; i < workers; i++ {
 		fp := gofeed.NewParser()
 		go func() {
@@ -86,7 +92,7 @@ func Fetch() ([]Article, error) {
 	}()
 
 	for _, source := range sources {
-		sc <- source
+		sc <- source.URL
 	}
 	close(sc)
 
