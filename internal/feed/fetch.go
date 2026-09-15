@@ -29,7 +29,7 @@ type Article struct {
 func CreateFeed(store *database.Store) ([]Article, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	
+
 	sources, err := store.GetSources(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sources: %w", err)
@@ -65,11 +65,11 @@ func CreateFeed(store *database.Store) ([]Article, error) {
 
 	go func() {
 		for f := range feeds {
-			feedOutput, err := generateArticles(f)
+			article, err := parseSourceFeed(f)
 			if err != nil {
 				continue
 			}
-			articles = append(articles, feedOutput...)
+			articles = append(articles, article...)
 		}
 		close(done)
 	}()
@@ -83,7 +83,7 @@ func CreateFeed(store *database.Store) ([]Article, error) {
 	return BuildFeed(ctx, store, articles), nil
 }
 
-func generateArticles(feed *gofeed.Feed) ([]Article, error) {
+func parseSourceFeed(feed *gofeed.Feed) ([]Article, error) {
 	if feed == nil {
 		return nil, fmt.Errorf("feed is nil")
 	}
@@ -140,9 +140,9 @@ func getContent(item *gofeed.Item) string {
 	return body.String()
 }
 
-func getAuthors(feed *gofeed.Item) []Person {
+func getAuthors(item *gofeed.Item) []Person {
 	persons := []Person{}
-	authors := feed.Authors
+	authors := item.Authors
 	for _, author := range authors {
 		persons = append(persons, Person{Name: author.Name})
 	}
@@ -150,18 +150,18 @@ func getAuthors(feed *gofeed.Item) []Person {
 	return persons
 }
 
-func getLink(feed *gofeed.Item) string {
-	feed.Link = strings.TrimSpace(feed.Link)
-	return feed.Link
+func getLink(item *gofeed.Item) string {
+	item.Link = strings.TrimSpace(item.Link)
+	return item.Link
 }
 
-func getDate(feed *gofeed.Item) string {
-	if feed.UpdatedParsed != nil {
-		return feed.UpdatedParsed.UTC().Format(time.RFC3339)
+func getDate(item *gofeed.Item) string {
+	if item.UpdatedParsed != nil {
+		return item.UpdatedParsed.UTC().Format(time.RFC3339)
 	}
 
-	if feed.PublishedParsed != nil {
-		return feed.PublishedParsed.UTC().Format(time.RFC3339)
+	if item.PublishedParsed != nil {
+		return item.PublishedParsed.UTC().Format(time.RFC3339)
 	}
 
 	return time.Now().UTC().Format(time.RFC3339)
