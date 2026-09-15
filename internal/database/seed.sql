@@ -14,3 +14,27 @@ INSERT INTO sources (name, url, is_active) VALUES
     ('Eli Bendersky', 'https://eli.thegreenplace.net/feeds/all.atom.xml', 1),
     ('Brandur Leach', 'https://brandur.org/articles.atom', 1)
 ON CONFLICT DO NOTHING;
+
+INSERT INTO interests (keyword, weight, is_main, anchor, is_active) VALUES
+    ('go', 0, 1, 'software.n.01', 1),
+    ('golang', 0, 1, 'software.n.01', 1),
+    ('frontend', 0, 1, 'software.n.01', 1),
+    ('front end', 0, 1, 'software.n.01', 1),
+    ('backend', 0, 1, 'software.n.01', 1),
+    ('back end', 0, 1, 'software.n.01', 1),
+    ('coding', 0, 0, 'software.n.01', 1),
+    ('programming', 0, 0, 'software.n.01', 1),
+    ('software engineering', 0, 0, 'software.n.01', 1),
+    ('software', 0, 0, 'software.n.01', 1),
+    ('typescript', 0, 1, 'software.n.01', 1),
+    ('ts', 0, 0, 'software.n.01', 1),
+    ('database', 0, 1, 'database.n.01', 1),
+    ('orm', 0, 0, 'database.n.01', 1),
+    ('orms', 0, 0, 'database.n.01', 1),
+    ('sql', 0, 0, 'database.n.01', 1),
+    ('sqlite', 0, 0, 'database.n.01', 1),
+    ('postgres', 0, 0, 'database.n.01', 1),
+    ('postgresql', 0, 0, 'database.n.01', 1),
+    ('mysql', 0, 0, 'database.n.01', 1),
+    ('linux', 0, 1, 'operating_system.n.01', 1)
+ON CONFLICT DO NOTHING;
