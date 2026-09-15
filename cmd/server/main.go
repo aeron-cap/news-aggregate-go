@@ -55,11 +55,7 @@ func main() {
 }
 
 // TODOs
-// spin up the db to store articles 
-// setup interests 
-// find nice algo to fetch based on interests and sort by date
-// adjust algo to favor based on weight of interest keywords
-// manage sources
+// store generated articles for today and serve that instead of refetching everytime
 // i think we cant get the html to parse, so we just need headline + other info and a link to main source
 // interaction with fetched articles affect algorithm
 // add blacklist
