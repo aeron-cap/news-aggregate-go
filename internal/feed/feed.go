@@ -1,35 +1,19 @@
 package feed
 
 import (
+	"context"
 	"time"
+
+	"github.com/aeron-cap/news-aggregator/internal/database"
 )
 
-var keywords = []string{
-	"go",
-	"golang",
-	"frontend",
-	"front end",
-	"backend",
-	"back end",
-	"coding",
-	"programming",
-	"software engineering",
-	"software",
-	"typescript",
-	"ts",
-	"database",
-	"orm",
-	"orms",
-	"sql",
-	"sqlite",
-	"postgres",
-	"postgresql",
-	"mysql",
-	"linux",
-}
-
-func BuildFeed(articles []Article) []Article {
+func BuildFeed(ctx context.Context, s *database.Store, articles []Article) []Article {
+	keywords, err := s.GetInterests(ctx)
+	if err != nil {
+		return nil
+	}
 	interests := NewInterests(keywords)
+
 	currentTime := time.Now().UTC()
 	for i, _ := range articles {
 		articles[i].RelevanceScore = relevance(articles[i], interests)

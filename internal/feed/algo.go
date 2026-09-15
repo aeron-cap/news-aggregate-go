@@ -5,11 +5,14 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/aeron-cap/news-aggregator/internal/database"
 )
 
 type Interests struct {
-	keywords []string
+	keywords []database.Interest
 	patterns []*regexp.Regexp
+	weights  map[string]float64
 }
 
 const (
@@ -21,12 +24,20 @@ const (
 	recencyW      = 0.4
 )
 
-func NewInterests(keywords []string) Interests {
+func NewInterests(keywords []database.Interest) Interests {
 	patterns := make([]*regexp.Regexp, len(keywords))
+	weights := make(map[string]float64, len(keywords))
+	
 	for i, k := range keywords {
-		patterns[i] = regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(k) + `\b`)
+		patterns[i] = regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(k.Keyword) + `\b`)
+		weights[k.Keyword] = k.Weight
 	}
-	return Interests{keywords: keywords, patterns: patterns}
+
+	return Interests{
+		keywords: keywords,
+		patterns: patterns,
+		weights:  weights,
+	}
 }
 
 func relevance(article Article, interests Interests) float64 {
@@ -35,17 +46,20 @@ func relevance(article Article, interests Interests) float64 {
 	url := strings.ToLower(article.Link)
 
 	totalRelevance := 0.0
-	for _, re := range interests.patterns {
+	for i, kw := range interests.keywords {
+		re := interests.patterns[i]
+		weight := interests.weights[kw.Keyword]
+		
 		if re.MatchString(title) {
-			totalRelevance += titleWeight * float64(len(re.FindAllStringIndex(title, -1)))
+			totalRelevance += titleWeight * weight * float64(len(re.FindAllStringIndex(title, -1)))
 		}
 
 		if re.MatchString(content) {
-			totalRelevance += contentWeight * float64(len(re.FindAllStringIndex(content, -1)))
+			totalRelevance += contentWeight * weight * float64(len(re.FindAllStringIndex(content, -1)))
 		}
 
 		if re.MatchString(url) {
-			totalRelevance += urlWeight * float64(len(re.FindAllStringIndex(url, -1)))
+			totalRelevance += urlWeight * weight * float64(len(re.FindAllStringIndex(url, -1)))
 		}
 	}
 
@@ -58,10 +72,10 @@ func recency(article Article, currentTime time.Time) float64 {
 		return 0.0
 	}
 	ageHours := currentTime.Sub(date).Hours()
-	if (ageHours < 0) {
+	if ageHours < 0 {
 		return 1.0
 	}
-	
+
 	return math.Pow(0.5, (ageHours / halfLifeHours))
 }
 

@@ -1,9 +1,11 @@
+import os
 import sqlite3
 import nltk
 from nltk.corpus import wordnet as wn
 from nltk.corpus import wordnet_ic
 
-DB_NAME = "news.db"
+script_dir = os.path.dirname(os.path.abspath(__file__))
+DB_NAME = os.path.join(script_dir, "news.db")
 NON_MAIN_DECAY = 1.0
 
 nltk.download("wordnet")

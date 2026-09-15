@@ -80,7 +80,7 @@ func Fetch(store *database.Store) ([]Article, error) {
 	close(sc)
 
 	<-done
-	return BuildFeed(articles), nil
+	return BuildFeed(ctx, store, articles), nil
 }
 
 func generateArticles(feed *gofeed.Feed) ([]Article, error) {
