@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS interests (
     is_active BOOLEAN NOT NULL DEFAULT 0
 );
 
+CREATE INDEX IF NOT EXISTS idx_interests_keyword_active ON interests(keyword, is_active);
+
 CREATE TABLE IF NOT EXISTS articles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_id INTEGER REFERENCES sources(id) ON DELETE SET NULL,

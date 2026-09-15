@@ -1,85 +1,119 @@
+import sqlite3
+
 import nltk
 from nltk.corpus import wordnet as wn
 from nltk.corpus import wordnet_ic
 
-nltk.download('wordnet')
-nltk.download('wordnet_ic')
-brown_ic = wordnet_ic.ic('ic-brown.dat')
+DB_NAME = "news.db"
 
-KEYWORDS = [
-    "go", "golang", "frontend", "front end", "backend", "back end",
-    "coding", "programming", "software engineering", "software",
-    "typescript", "ts", "database", "orm", "orms", "sql", "sqlite",
-    "postgres", "postgresql", "mysql", "linux",
-]
-
-ALIASES = {
-    "go":                   "programming_language.n.01",
-    "golang":               "programming_language.n.01",
-    "typescript":           "programming_language.n.01",
-    "ts":                   "programming_language.n.01",
-    "coding":               "software.n.01",
-    "programming":          "software.n.01",
-    "frontend":             "software.n.01",
-    "front end":            "software.n.01",
-    "software engineering": "software.n.01",
-    "software":             "software.n.01",
-    "backend":              "software.n.01",
-    "back end":             "software.n.01",
-    "database":             "database.n.01",
-    "orm":                  "database.n.01",
-    "orms":                 "database.n.01",
-    "sql":                  "database.n.01",
-    "sqlite":               "database.n.01",
-    "postgres":             "database.n.01",
-    "postgresql":           "database.n.01",
-    "mysql":                "database.n.01",
-    "linux":                "operating_system.n.01",
-}
-
-MAINS = ["golang", "database", "typescript", "backend", "back end", "frontend", "front end", "linux"]
+nltk.download("wordnet")
+nltk.download("wordnet_ic")
+brown_ic = wordnet_ic.ic("ic-brown.dat")
 
 NON_MAIN_DECAY = 1
 
-VALID = {s.name() for s in wn.all_synsets()}
-for key in sorted(set(ALIASES.values())):
-    if key not in VALID:
-        raise SystemExit(f"Anchor '{key}' is not a valid WordNet synset. Fix ALIASES.")
 
-def anchor(kw):
-    return wn.synset(ALIASES[kw])
+def fetch_interests():
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
 
-print("=== 1. COVERAGE ===")
-for kw in KEYWORDS:
-    senses = [s.name() for s in wn.synsets(kw)]
-    flag = "" if senses else "   <-- not in WordNet (relying on ALIASES)"
-    print(f"  {kw:22s} {senses}{flag}")
+    cursor.execute(
+        "SELECT id, keyword, weight, is_main, anchor, is_active FROM interests WHERE is_active = 1"
+    )
+    rows = cursor.fetchall()
 
-print("\n=== 2. WEIGHTS ===")
-main_anchors = {m: anchor(m) for m in MAINS}
+    if not rows:
+        print("No active interests found in the database.")
+        return None
 
-raw = {}
-for kw in KEYWORDS:
-    ka = anchor(kw)
-    best = 0.0
-    for m in MAINS:
-        sim = ka.res_similarity(main_anchors[m], brown_ic)
-        if sim is not None and sim > best:
-            best = sim
-    raw[kw] = best
+    conn.close()
+    return rows
 
-max_raw = max(raw.values()) or 1.0
-weights = {}
-for kw in KEYWORDS:
-    if kw in MAINS:
-        weights[kw] = 1.0
-    else:
-        weights[kw] = (raw[kw] / max_raw) * NON_MAIN_DECAY
 
-for kw in sorted(weights, key=lambda k: -weights[k]):
-    bar = "#" * int(weights[kw] * 40)
-    print(f"  {weights[kw]:6.3f}  {bar:40s} {kw}")
+def check_synset_exists(interests):
+    valid = {s.name() for s in wn.all_synsets()}
 
-print("\n=== 3. SEED SQL ===")
-for kw in sorted(weights, key=lambda k: -weights[k]):
-    print(f"INSERT OR IGNORE INTO interests (keyword, weight, is_active) VALUES ('{kw}', {weights[kw]:.3f}, 1);")
+    for interest in interests:
+        anchor = interest["anchor"]
+        if anchor and anchor not in valid:
+            raise SystemExit(
+                f"Anchor '{anchor}' is not a valid WordNet synset. Fix Anchors."
+            )
+
+
+def anchor(interest):
+    anchor_name = interest["anchor"]
+    if not anchor_name:
+        return None
+    return wn.synset(anchor_name)
+
+
+def calc_weights(interests):
+    main_interests = [m for m in interests if m["is_main"]]
+    if not main_interests:
+        raise SystemExit(
+            "No main interests found. At least one main interest is required."
+        )
+
+    main_anchors = {}
+    for m in main_interests:
+        synset = anchor(m)
+        if synset:
+            main_anchors[m["keyword"]] = synset
+
+    keywords = [kw["keyword"] for kw in interests]
+    raw = {}
+    for kw in interests:
+        kw_anchor = anchor(kw)
+        if not kw_anchor:
+            continue
+
+        best = 0.0
+        for m_synset in main_anchors.values():
+            sim = kw_anchor.res_similarity(m_synset, brown_ic)
+            if sim is not None and sim > best:
+                best = sim
+        raw[kw["keyword"]] = best
+
+    if not raw:
+        raise SystemExit("No valid keyword anchors found for similarity calculation.")
+
+    max_raw = max(raw.values()) or 1.0
+    weights = {}
+    for kw in keywords:
+        if kw in [m["keyword"] for m in main_interests]:
+            weights[kw] = 1.0
+        else:
+            weights[kw] = (raw.get(kw, 0) / max_raw) * NON_MAIN_DECAY
+
+    return weights
+
+
+def insert_interests(weights):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    for kw, weight in weights.items():
+        cursor.execute(
+            "UPDATE interests SET weight = ? WHERE keyword = ?", (weight, kw)
+        )
+
+    conn.commit()
+    conn.close()
+
+
+def main():
+    interests = fetch_interests()
+    if interests is None:
+        return
+
+    check_synset_exists(interests)
+
+    weights = calc_weights(interests)
+    insert_interests(weights)
+    print("Weights calculated and updated successfully.")
+
+
+if __name__ == "__main__":
+    main()

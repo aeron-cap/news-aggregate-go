@@ -3,6 +3,8 @@ package database
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"strings"
 )
 
 type Store struct {
@@ -62,13 +64,16 @@ func (s *Store) InsertSources(ctx context.Context, sources []Source) error {
 }
 
 type Interest struct {
-	ID      int64  `json:"id"`
-	Keyword string `json:"keyword"`
-	Weight  string `json:"weight"`
+	ID       int64          `json:"id"`
+	Keyword  string         `json:"keyword"`
+	Weight   float64        `json:"weight"`
+	IsMain   bool           `json:"is_main"`
+	Anchor   sql.NullString `json:"anchor"`
+	IsActive bool           `json:"is_active"`
 }
 
 func (s *Store) GetInterests(ctx context.Context) ([]Interest, error) {
-	const stmt = `SELECT id, keyword, weight FROM interests`
+	const stmt = `SELECT id, keyword, weight, is_main, anchor, is_active FROM interests WHERE is_active = 1 AND weight > 0`
 
 	rows, err := s.db.QueryContext(ctx, stmt)
 	if err != nil {
@@ -79,7 +84,7 @@ func (s *Store) GetInterests(ctx context.Context) ([]Interest, error) {
 	interests := []Interest{}
 	for rows.Next() {
 		var interest Interest
-		if err := rows.Scan(&interest.ID, &interest.Keyword, &interest.Weight); err != nil {
+		if err := rows.Scan(&interest.ID, &interest.Keyword, &interest.Weight, &interest.IsMain, &interest.Anchor, &interest.IsActive); err != nil {
 			return nil, err
 		}
 		interests = append(interests, interest)
@@ -93,14 +98,14 @@ func (s *Store) GetInterests(ctx context.Context) ([]Interest, error) {
 }
 
 func (s *Store) InsertInterests(ctx context.Context, interests []Interest) error {
-	stmt, err := s.db.PrepareContext(ctx, `INSERT INTO interests (keyword, weight) VALUES (?, ?)`)
+	stmt, err := s.db.PrepareContext(ctx, `INSERT INTO interests (keyword, weight, is_main, anchor, is_active) VALUES (?, ?)`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
 	for _, interest := range interests {
-		if _, err := stmt.ExecContext(ctx, interest.Keyword, interest.Weight); err != nil {
+		if _, err := stmt.ExecContext(ctx, interest.Keyword, interest.Weight, interest.IsMain, interest.Anchor, interest.IsActive); err != nil {
 			return err
 		}
 	}
