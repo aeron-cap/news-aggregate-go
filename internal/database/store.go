@@ -45,9 +45,6 @@ func (s *Store) GetSources(ctx context.Context) ([]Source, error) {
 	return sources, nil
 }
 
-// TODO:
-// Get from Sources Table by ID
-// Write to Sources Table
 func (s *Store) InsertSources(ctx context.Context, sources []Source) error {
 	stmt, err := s.db.PrepareContext(ctx, `INSERT INTO sources (name, url, is_active) VALUES (?, ?, ?)`)
 	if err != nil {
@@ -63,8 +60,6 @@ func (s *Store) InsertSources(ctx context.Context, sources []Source) error {
 
 	return nil
 }
-
-// Delete from Sources Table
 
 type Interest struct {
 	ID      int64  `json:"id"`
@@ -97,8 +92,6 @@ func (s *Store) GetInterests(ctx context.Context) ([]Interest, error) {
 	return interests, nil
 }
 
-// Get from Interests Table by ID
-// Write to Interests Table
 func (s *Store) InsertInterests(ctx context.Context, interests []Interest) error {
 	stmt, err := s.db.PrepareContext(ctx, `INSERT INTO interests (keyword, weight) VALUES (?, ?)`)
 	if err != nil {
@@ -114,10 +107,3 @@ func (s *Store) InsertInterests(ctx context.Context, interests []Interest) error
 
 	return nil
 }
-
-// Delete from Interests Table
-//
-// Get All from Articles Table
-// Get from Articles Table by ID
-// Write to Articles Table
-// Delete from Articles Table

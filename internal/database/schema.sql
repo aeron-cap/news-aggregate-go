@@ -10,7 +10,10 @@ CREATE INDEX IF NOT EXISTS idx_sources_name_active ON sources(name, is_active);
 CREATE TABLE IF NOT EXISTS interests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     keyword TEXT NOT NULL UNIQUE,
-    weight REAL NOT NULL DEFAULT 1
+    weight REAL NOT NULL DEFAULT 1,
+    is_main BOOLEAN NOT NULL DEFAULT 0,
+    anchor TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS articles (
