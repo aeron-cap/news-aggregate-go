@@ -3,8 +3,6 @@ package database
 import (
 	"context"
 	"database/sql"
-	"fmt"
-	"strings"
 )
 
 type Store struct {
@@ -97,18 +95,36 @@ func (s *Store) GetInterests(ctx context.Context) ([]Interest, error) {
 	return interests, nil
 }
 
-func (s *Store) InsertInterests(ctx context.Context, interests []Interest) error {
-	stmt, err := s.db.PrepareContext(ctx, `INSERT INTO interests (keyword, weight, is_main, anchor, is_active) VALUES (?, ?)`)
+func (s *Store) UpdateInterestActivation(ctx context.Context, interestID int64, isActive bool) error {
+	stmt, err := s.db.PrepareContext(ctx, `UPDATE interests SET is_active = ? WHERE id = ?`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
-	for _, interest := range interests {
-		if _, err := stmt.ExecContext(ctx, interest.Keyword, interest.Weight, interest.IsMain, interest.Anchor, interest.IsActive); err != nil {
+	_, err = stmt.ExecContext(ctx, isActive, interestID)
+	return err
+}
+
+func (s *Store) UpdateInterestsActivation(ctx context.Context, interestIDs []int64, isActive bool) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, `UPDATE interests SET is_active = ? WHERE id = ?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, id := range interestIDs {
+		_, err = stmt.ExecContext(ctx, isActive, id)
+		if err != nil {
 			return err
 		}
 	}
 
-	return nil
+	return tx.Commit()
 }
