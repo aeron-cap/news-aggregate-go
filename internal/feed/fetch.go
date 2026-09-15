@@ -26,7 +26,7 @@ type Article struct {
 	WeightedScore  float64
 }
 
-func Fetch(store *database.Store) ([]Article, error) {
+func CreateFeed(store *database.Store) ([]Article, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	
