@@ -9,7 +9,7 @@ import (
 	"github.com/aeron-cap/news-aggregator/internal/database"
 )
 
-type Interests struct {
+type InterestConfig struct {
 	keywords []database.Interest
 	patterns []*regexp.Regexp
 	weights  map[string]float64
@@ -24,32 +24,32 @@ const (
 	recencyW      = 0.4
 )
 
-func NewInterests(keywords []database.Interest) Interests {
+func NewInterestConfig(keywords []database.Interest) InterestConfig {
 	patterns := make([]*regexp.Regexp, len(keywords))
 	weights := make(map[string]float64, len(keywords))
-	
+
 	for i, k := range keywords {
 		patterns[i] = regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(k.Keyword) + `\b`)
 		weights[k.Keyword] = k.Weight
 	}
 
-	return Interests{
+	return InterestConfig{
 		keywords: keywords,
 		patterns: patterns,
 		weights:  weights,
 	}
 }
 
-func relevance(article Article, interests Interests) float64 {
+func relevance(article Article, ic InterestConfig) float64 {
 	title := strings.ToLower(article.Title)
 	content := strings.ToLower(article.Content)
 	url := strings.ToLower(article.Link)
 
 	totalRelevance := 0.0
-	for i, kw := range interests.keywords {
-		re := interests.patterns[i]
-		weight := interests.weights[kw.Keyword]
-		
+	for i, kw := range ic.keywords {
+		re := ic.patterns[i]
+		weight := ic.weights[kw.Keyword]
+
 		if re.MatchString(title) {
 			totalRelevance += titleWeight * weight * float64(len(re.FindAllStringIndex(title, -1)))
 		}

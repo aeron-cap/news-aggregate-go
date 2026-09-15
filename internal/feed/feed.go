@@ -8,15 +8,15 @@ import (
 )
 
 func BuildFeed(ctx context.Context, s *database.Store, articles []Article) []Article {
-	keywords, err := s.GetInterests(ctx)
+	interests, err := s.GetInterests(ctx)
 	if err != nil {
 		return nil
 	}
-	interests := NewInterests(keywords)
+	interestConfig := NewInterestConfig(interests)
 
 	currentTime := time.Now().UTC()
 	for i, _ := range articles {
-		articles[i].RelevanceScore = relevance(articles[i], interests)
+		articles[i].RelevanceScore = relevance(articles[i], interestConfig)
 		if articles[i].RelevanceScore != 0 {
 			articles[i].RecencyScore = recency(articles[i], currentTime)
 		} else {
@@ -26,7 +26,6 @@ func BuildFeed(ctx context.Context, s *database.Store, articles []Article) []Art
 		articles[i].WeightedScore = weightedScore(articles[i])
 	}
 
-	// date can be edited using frontend later
 	articles = filterOldArticles(articles, 1, 0, 0)
 	return giveTopArticles(10, articles)
 }
