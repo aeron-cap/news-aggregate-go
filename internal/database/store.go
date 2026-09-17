@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 )
 
@@ -152,7 +153,7 @@ func (s *Store) InsertArticles(ctx context.Context, articles []Article) error {
 	defer tx.Rollback()
 
 	stmt, err := tx.PrepareContext(ctx, `
-        INSERT INTO articles
+        INSERT OR REPLACE INTO articles
         (source_id, title, summary, author, url, source_date, weighted_score, batch_date)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `)
@@ -174,7 +175,8 @@ func (s *Store) InsertArticles(ctx context.Context, articles []Article) error {
 			article.BatchDate,
 		)
 		if err != nil {
-			return err
+			fmt.Printf("Warning: failed to insert article %s: %v\n", article.URL, err)
+			continue
 		}
 	}
 
