@@ -30,6 +30,16 @@ func CreateFeed(store *database.Store) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	unreadArticles, err := store.GetUnreadArticles(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get unread articles: %w", err)
+	}
+
+	if len(unreadArticles) >= 10 {
+        fmt.Println("Enough unread articles available, skipping feed update")
+        return nil
+    }
+
 	sources, err := store.GetSources(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get sources: %w", err)

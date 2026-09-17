@@ -13,7 +13,11 @@ INSERT INTO sources (name, url, is_active) VALUES
     ('Kottke.org', 'https://feeds.kottke.org/main', 1),
     ('Dan Luu', 'https://danluu.com/atom.xml', 1),
     ('Eli Bendersky', 'https://eli.thegreenplace.net/feeds/all.atom.xml', 1),
-    ('Brandur Leach', 'https://brandur.org/articles.atom', 1)
+    ('Brandur Leach', 'https://brandur.org/articles.atom', 1),
+    ('Angelo Fallaria', 'https://angelo.fallaria.com/rss.xml', 1),
+    ('Uncomfy Halo Macro', 'https://uncomfyhalomacro.pl/atom.xml', 1),
+    ('Ryana Aque', 'https://www.ryanaque.com/rss.xml', 1),
+    ('AC Open Source', 'https://ac-opensource.github.io/blog/rss.xml', 1) 
 ON CONFLICT DO NOTHING;
 
 INSERT INTO interests (keyword, weight, is_main, anchor, is_active) VALUES
