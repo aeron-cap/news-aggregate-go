@@ -37,7 +37,7 @@ func main() {
 	
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health)
-	mux.HandleFunc("GET /feeds", app.getFeeds)
+	mux.HandleFunc("GET /build-feed", app.buildFeed)
 	
 	srv := &http.Server{
 		Addr: ":6767",
@@ -55,7 +55,6 @@ func main() {
 }
 
 // TODOs
-// store generated articles for today and serve that instead of refetching everytime
 // i think we cant get the html to parse, so we just need headline + other info and a link to main source
 // interaction with fetched articles affect algorithm
 // add blacklist
