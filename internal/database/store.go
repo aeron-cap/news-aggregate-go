@@ -205,17 +205,16 @@ func (s *Store) MarkArticleAsRead(ctx context.Context, articleID int64) error {
 	return err
 }
 
-func (s *Store) GetUnreadArticles(ctx context.Context, limit int, offset int) ([]Article, error) {
+func (s *Store) GetUnreadArticles(ctx context.Context) ([]Article, error) {
 	stmt := `
         SELECT id, source_id, title, summary, author, url, source_date,
                weighted_score, batch_date, created_at, read_at
         FROM articles
         WHERE read_at IS NULL
         ORDER BY weighted_score DESC
-        LIMIT ? OFFSET ?
     `
 
-	rows, err := s.db.QueryContext(ctx, stmt, limit, offset)
+	rows, err := s.db.QueryContext(ctx, stmt)
 	if err != nil {
 		return nil, err
 	}

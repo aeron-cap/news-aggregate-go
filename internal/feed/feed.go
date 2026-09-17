@@ -3,12 +3,23 @@ package feed
 import (
 	"context"
 	"database/sql"
+	"slices"
 	"time"
 
 	"github.com/aeron-cap/news-aggregator/internal/database"
 )
 
 func BuildFeed(ctx context.Context, s *database.Store, articles []Article) error {
+	savedArticles, err := s.GetUnreadArticles(ctx)
+	if err != nil {
+		return err
+	}
+
+	urls := make([]string, len(savedArticles))
+	for _, article := range savedArticles {
+		urls = append(urls, article.URL)
+	} 
+	
 	interests, err := s.GetInterests(ctx)
 	if err != nil {
 		return err
@@ -17,6 +28,10 @@ func BuildFeed(ctx context.Context, s *database.Store, articles []Article) error
 
 	currentTime := time.Now().UTC()
 	for i, _ := range articles {
+		if slices.Index(urls, articles[i].Link) != -1 {
+			continue
+		}
+		
 		articles[i].RelevanceScore = relevance(articles[i], interestConfig)
 		if articles[i].RelevanceScore != 0 {
 			articles[i].RecencyScore = recency(articles[i], currentTime)
