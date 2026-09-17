@@ -42,7 +42,7 @@ func NewInterestConfig(keywords []database.Interest) InterestConfig {
 
 func relevance(article Article, ic InterestConfig) float64 {
 	title := strings.ToLower(article.Title)
-	content := strings.ToLower(article.Content)
+	content := strings.ToLower(article.Summary)
 	url := strings.ToLower(article.Link)
 
 	totalRelevance := 0.0

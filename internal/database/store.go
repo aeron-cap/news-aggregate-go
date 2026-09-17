@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
 type Store struct {
@@ -127,4 +128,121 @@ func (s *Store) UpdateInterestsActivation(ctx context.Context, interestIDs []int
 	}
 
 	return tx.Commit()
+}
+
+type Article struct {
+	ID            int64          `json:"id"`
+	SourceID      sql.NullInt64  `json:"source_id"`
+	Title         string         `json:"title"`
+	Summary       sql.NullString `json:"summary"`
+	Author        sql.NullString `json:"author"`
+	URL           string         `json:"url"`
+	SourceDate    sql.NullTime   `json:"source_date"`
+	WeightedScore float64        `json:"weighted_score"`
+	BatchDate     time.Time      `json:"batch_date"`
+	CreatedAt     time.Time      `json:"created_at"`
+	ReadAt        sql.NullTime   `json:"read_at"`
+}
+
+func (s *Store) InsertArticles(ctx context.Context, articles []Article) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, `
+        INSERT INTO articles
+        (source_id, title, summary, author, url, source_date, weighted_score, batch_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, article := range articles {
+		_, err := stmt.ExecContext(
+			ctx,
+			article.SourceID,
+			article.Title,
+			article.Summary,
+			article.Author,
+			article.URL,
+			article.SourceDate,
+			article.WeightedScore,
+			article.BatchDate,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (s *Store) DeleteArticlesByBatchDate(ctx context.Context, batchDate time.Time) error {
+	stmt, err := s.db.PrepareContext(ctx, `DELETE FROM articles WHERE batch_date = ?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.ExecContext(ctx, batchDate.Format("2006-01-02"))
+	return err
+}
+
+func (s *Store) MarkArticleAsRead(ctx context.Context, articleID int64) error {
+	stmt, err := s.db.PrepareContext(ctx, `UPDATE articles SET read_at = CURRENT_TIMESTAMP WHERE id = ?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.ExecContext(ctx, articleID)
+	return err
+}
+
+func (s *Store) GetUnreadArticles(ctx context.Context, limit int, offset int) ([]Article, error) {
+	stmt := `
+        SELECT id, source_id, title, summary, author, url, source_date,
+               weighted_score, batch_date, created_at, read_at
+        FROM articles
+        WHERE read_at IS NULL
+        ORDER BY weighted_score DESC
+        LIMIT ? OFFSET ?
+    `
+
+	rows, err := s.db.QueryContext(ctx, stmt, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	articles := []Article{}
+	for rows.Next() {
+		var article Article
+		if err := rows.Scan(
+			&article.ID,
+			&article.SourceID,
+			&article.Title,
+			&article.Summary,
+			&article.Author,
+			&article.URL,
+			&article.SourceDate,
+			&article.WeightedScore,
+			&article.BatchDate,
+			&article.CreatedAt,
+			&article.ReadAt,
+		); err != nil {
+			return nil, err
+		}
+		articles = append(articles, article)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return articles, nil
 }

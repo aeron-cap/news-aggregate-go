@@ -17,7 +17,7 @@ type Person struct {
 
 type Article struct {
 	Title          string
-	Content        string
+	Summary        string
 	Authors        []Person
 	Link           string
 	Date           string
@@ -26,13 +26,13 @@ type Article struct {
 	WeightedScore  float64
 }
 
-func CreateFeed(store *database.Store) ([]Article, error) {
+func CreateFeed(store *database.Store) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	sources, err := store.GetSources(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get sources: %w", err)
+		return fmt.Errorf("failed to get sources: %w", err)
 	}
 
 	var workers = len(sources) + 1
@@ -80,7 +80,13 @@ func CreateFeed(store *database.Store) ([]Article, error) {
 	close(sc)
 
 	<-done
-	return BuildFeed(ctx, store, articles), nil
+
+	err = BuildFeed(ctx, store, articles)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func parseSourceFeed(feed *gofeed.Feed) ([]Article, error) {
@@ -92,7 +98,7 @@ func parseSourceFeed(feed *gofeed.Feed) ([]Article, error) {
 	for _, item := range feed.Items {
 		article := Article{
 			Title:   getTitle(item),
-			Content: getContent(item),
+			Summary: getSummary(item),
 			Authors: getAuthors(item),
 			Link:    getLink(item),
 			Date:    getDate(item),
@@ -111,7 +117,7 @@ func getTitle(item *gofeed.Item) string {
 	return ""
 }
 
-func getContent(item *gofeed.Item) string {
+func getSummary(item *gofeed.Item) string {
 	raw := item.Content
 
 	z := html.NewTokenizer(strings.NewReader(raw))

@@ -1,4 +1,5 @@
 INSERT INTO sources (name, url, is_active) VALUES
+    ('Preston Thorpe', 'https://pthorpe92.dev/atom.xml', 1),
     ('Lobsters', 'https://lobste.rs/rss', 1),
     ('Hacker News', 'https://hnrss.org/frontpage', 1),
     ('Hacker News Atom', 'https://hnrss.org/frontpage.atom', 1),

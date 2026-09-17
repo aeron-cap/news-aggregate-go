@@ -2,15 +2,16 @@ package feed
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/aeron-cap/news-aggregator/internal/database"
 )
 
-func BuildFeed(ctx context.Context, s *database.Store, articles []Article) []Article {
+func BuildFeed(ctx context.Context, s *database.Store, articles []Article) error {
 	interests, err := s.GetInterests(ctx)
 	if err != nil {
-		return nil
+		return err
 	}
 	interestConfig := NewInterestConfig(interests)
 
@@ -26,6 +27,45 @@ func BuildFeed(ctx context.Context, s *database.Store, articles []Article) []Art
 		articles[i].WeightedScore = weightedScore(articles[i])
 	}
 
-	articles = filterOldArticles(articles, 1, 0, 0)
-	return giveTopArticles(10, articles)
+	articles = giveTopArticles(10, filterOldArticles(articles, 1, 0, 0))
+
+	dbArticles := make([]database.Article, 0, len(articles))
+	
+    for _, article := range articles {
+        var summary sql.NullString
+        if article.Summary != "" {
+            summary = sql.NullString{String: article.Summary, Valid: true}
+        }
+	
+        var author sql.NullString
+        if len(article.Authors) > 0 {
+            author = sql.NullString{String: article.Authors[0].Name, Valid: true}
+        }
+	
+        var sourceDate sql.NullTime
+        if article.Date != "" {
+            parsedDate, err := time.Parse(time.RFC3339, article.Date)
+            if err == nil {
+                sourceDate = sql.NullTime{Time: parsedDate, Valid: true}
+            }
+        }
+	
+        dbArticle := database.Article{
+            Title:         article.Title,
+            Summary:       summary,
+            Author:        author,
+            URL:           article.Link,
+            SourceDate:    sourceDate,
+            WeightedScore: article.WeightedScore,
+            BatchDate:     currentTime,
+        }
+	
+        dbArticles = append(dbArticles, dbArticle)
+    }
+	
+    if err := s.InsertArticles(ctx, dbArticles); err != nil {
+        return err
+    }
+	
+    return nil
 }

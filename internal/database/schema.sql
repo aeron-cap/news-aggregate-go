@@ -26,11 +26,10 @@ CREATE TABLE IF NOT EXISTS articles (
     author TEXT,
     url TEXT NOT NULL UNIQUE,
     source_date DATETIME,
-    relevance_score REAL NOT NULL DEFAULT 0,
-    recency_score REAL NOT NULL DEFAULT 0,
     weighted_score REAL NOT NULL DEFAULT 0,
     batch_date DATE NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    read_at DATETIME
 );
 
 CREATE INDEX IF NOT EXISTS idx_articles_batch_weighted ON articles(batch_date, weighted_score DESC);
