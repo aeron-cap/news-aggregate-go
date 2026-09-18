@@ -247,3 +247,38 @@ func (s *Store) GetUnreadArticles(ctx context.Context) ([]Article, error) {
 
 	return articles, nil
 }
+
+func (s *Store) CountUnreadArticles(ctx context.Context) (int, error) {
+	stmt := `SELECT COUNT(*) FROM articles WHERE read_at IS NULL`
+
+	row := s.db.QueryRowContext(ctx, stmt)
+	var count int
+	if err := row.Scan(&count); err != nil {
+		return 0, err
+	}
+
+	return count, nil
+}
+
+func (s *Store) GetLastFetchDate(ctx context.Context) (time.Time, error) {
+	const stmt = `SELECT MAX(batch_date) FROM articles`
+
+	row := s.db.QueryRowContext(ctx, stmt)
+
+	var rawDateTime sql.NullString
+	if err := row.Scan(&rawDateTime); err != nil {
+		return time.Time{}, err
+	}
+
+	if !rawDateTime.Valid {
+		return time.Time{}, nil
+	}
+
+	const sqliteTimestampLayout = "2006-01-02 15:04:05.999999-07:00"
+	parsed, err := time.Parse(sqliteTimestampLayout, rawDateTime.String)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to parse last fetch date %q: %w", rawDateTime.String, err)
+	}
+
+	return parsed, nil
+}

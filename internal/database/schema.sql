@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS articles (
     url TEXT NOT NULL UNIQUE,
     source_date DATETIME,
     weighted_score REAL NOT NULL DEFAULT 0,
-    batch_date DATE NOT NULL,
+    batch_date DATETIME NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     read_at DATETIME
 );

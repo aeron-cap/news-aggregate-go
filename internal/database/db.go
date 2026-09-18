@@ -15,7 +15,7 @@ var schemaSQL string
 var seed string
 
 func Open(ctx context.Context, dbPath string) (*sql.DB, error) {
-	dsn := fmt.Sprintf("%s?_journal_mode=WAL&_foreign_keys=ON&_busy_timeout=5000", dbPath)
+	dsn := fmt.Sprintf("%s?_journal_mode=WAL&_foreign_keys=ON&_busy_timeout=5000&parseTime=true&_time_format=sqlite", dbPath)
 
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
