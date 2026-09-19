@@ -73,7 +73,7 @@ func CreateFeed(store *database.Store) error {
 
 	go func() {
 		for f := range feeds {
-			article, err := parseSourceFeed(f)
+			article, err := parseSourceFeedToArticle(f)
 			if err != nil {
 				continue
 			}
@@ -97,7 +97,7 @@ func CreateFeed(store *database.Store) error {
 	return nil
 }
 
-func parseSourceFeed(feed *gofeed.Feed) ([]Article, error) {
+func parseSourceFeedToArticle(feed *gofeed.Feed) ([]Article, error) {
 	if feed == nil {
 		return nil, fmt.Errorf("feed is nil")
 	}
