@@ -30,21 +30,12 @@ func CreateFeed(store *database.Store) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	unread, err := store.CountUnreadArticles(ctx)
+	isRefreshNeeded, err := isRefreshNeeded(ctx, store)
 	if err != nil {
-		return fmt.Errorf("failed to count unread articles: %w", err)
+		return err
 	}
-
-	lastFetch, err := store.GetLastFetchDate(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get last fetch: %w", err)
-	}
-
-	needBuffer := unread < 10
-	isStale := time.Since(lastFetch) > time.Hour
-	fmt.Print(time.Since(lastFetch), time.Hour)
-	if !needBuffer && !isStale {
-		return nil	
+	if !isRefreshNeeded {
+		return nil
 	}
 
 	sources, err := store.GetSources(ctx)
@@ -188,4 +179,21 @@ func getDate(item *gofeed.Item) string {
 	}
 
 	return time.Now().UTC().Format(time.RFC3339)
+}
+
+func isRefreshNeeded(ctx context.Context, store *database.Store) (bool, error) {
+	unread, err := store.CountUnreadArticles(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to count unread articles: %w", err)
+	}
+
+	lastFetch, err := store.GetLastFetchDate(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to get last fetch: %w", err)
+	}
+
+	needBuffer := unread < 10
+	isStale := time.Since(lastFetch) > time.Hour
+
+	return needBuffer && isStale, nil
 }
