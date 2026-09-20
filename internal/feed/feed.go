@@ -51,6 +51,7 @@ func BuildFeed(ctx context.Context, s *database.Store, articles []Article) error
         }
 	
         dbArticle := database.Article{
+        	SourceID:      sql.NullInt64{Int64: article.SourceID, Valid: true},
             Title:         article.Title,
             Summary:       summary,
             Author:        author,

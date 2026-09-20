@@ -143,6 +143,7 @@ type Article struct {
 	BatchDate     time.Time      `json:"batch_date"`
 	CreatedAt     time.Time      `json:"created_at"`
 	ReadAt        sql.NullTime   `json:"read_at"`
+	SourceName    sql.NullString `json:"source_name"`
 }
 
 func (s *Store) InsertArticles(ctx context.Context, articles []Article) error {
@@ -207,11 +208,11 @@ func (s *Store) MarkArticleAsRead(ctx context.Context, articleID int64) error {
 
 func (s *Store) GetUnreadArticles(ctx context.Context) ([]Article, error) {
 	stmt := `
-        SELECT id, source_id, title, summary, author, url, source_date,
-               weighted_score, batch_date, created_at, read_at
-        FROM articles
-        WHERE read_at IS NULL
-        ORDER BY batch_date DESC, weighted_score DESC
+        SELECT a.*, s.name
+        FROM articles a
+        LEFT JOIN sources s ON a.source_id = s.id
+        WHERE a.read_at IS NULL
+        ORDER BY a.batch_date DESC, a.weighted_score DESC
     `
 
 	rows, err := s.db.QueryContext(ctx, stmt)
@@ -235,6 +236,7 @@ func (s *Store) GetUnreadArticles(ctx context.Context) ([]Article, error) {
 			&article.BatchDate,
 			&article.CreatedAt,
 			&article.ReadAt,
+			&article.SourceName,
 		); err != nil {
 			return nil, err
 		}

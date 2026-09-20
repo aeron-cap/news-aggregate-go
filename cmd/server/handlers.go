@@ -41,6 +41,7 @@ type articleResponse struct {
 	SourceDate    *time.Time `json:"source_date"`
 	WeightedScore float64    `json:"weighted_score"`
 	BatchDate     time.Time  `json:"batch_date"`
+	SourceName	  *string    `json:"source_name"`
 }
 
 func (a *app) fetchFeed(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +56,13 @@ func (a *app) fetchFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(articles) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode([]articleResponse{})
+		return
+	}
+
 	payload := make([]articleResponse, 0, len(articles))
 	for _, article := range articles {
 		payload = append(payload, articleResponse{
@@ -66,6 +74,7 @@ func (a *app) fetchFeed(w http.ResponseWriter, r *http.Request) {
 			SourceDate:    feed.NullTime(article.SourceDate),
 			WeightedScore: article.WeightedScore,
 			BatchDate:     article.BatchDate,
+			SourceName:    feed.NullString(article.SourceName),
 		})
 	}
 

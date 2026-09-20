@@ -16,6 +16,7 @@ type Person struct {
 }
 
 type Article struct {
+	SourceID       int64
 	Title          string
 	Summary        string
 	Authors        []Person
@@ -24,6 +25,16 @@ type Article struct {
 	RelevanceScore float64
 	RecencyScore   float64
 	WeightedScore  float64
+}
+
+type rawSource struct {
+	ID	int64
+	URL string
+}
+
+type rawFeed struct {
+	SourceID int64
+	Feed     *gofeed.Feed	
 }
 
 func CreateFeed(store *database.Store) error {
@@ -44,8 +55,8 @@ func CreateFeed(store *database.Store) error {
 	}
 
 	var workers = len(sources) + 1
-	sc := make(chan string)
-	feeds := make(chan *gofeed.Feed)
+	sc := make(chan rawSource)
+	feeds := make(chan rawFeed)
 	workersDone := make(chan bool)
 	done := make(chan bool)
 	articles := []Article{}
@@ -54,11 +65,11 @@ func CreateFeed(store *database.Store) error {
 		fp := gofeed.NewParser()
 		go func() {
 			for s := range sc {
-				feed, err := fp.ParseURLWithContext(s, ctx)
+				feed, err := fp.ParseURLWithContext(s.URL, ctx)
 				if err != nil {
 					continue
 				}
-				feeds <- feed
+				feeds <- rawFeed{SourceID: s.ID, Feed: feed}
 			}
 			workersDone <- true
 		}()
@@ -73,7 +84,7 @@ func CreateFeed(store *database.Store) error {
 
 	go func() {
 		for f := range feeds {
-			article, err := parseSourceFeedToArticle(f)
+			article, err := parseSourceFeedToArticle(f.Feed, f.SourceID)
 			if err != nil {
 				continue
 			}
@@ -83,7 +94,7 @@ func CreateFeed(store *database.Store) error {
 	}()
 
 	for _, source := range sources {
-		sc <- source.URL
+		sc <- rawSource{ID: source.ID, URL: source.URL}
 	}
 	close(sc)
 
@@ -97,7 +108,7 @@ func CreateFeed(store *database.Store) error {
 	return nil
 }
 
-func parseSourceFeedToArticle(feed *gofeed.Feed) ([]Article, error) {
+func parseSourceFeedToArticle(feed *gofeed.Feed, sourceID int64) ([]Article, error) {
 	if feed == nil {
 		return nil, fmt.Errorf("feed is nil")
 	}
@@ -105,11 +116,12 @@ func parseSourceFeedToArticle(feed *gofeed.Feed) ([]Article, error) {
 	articles := []Article{}
 	for _, item := range feed.Items {
 		article := Article{
-			Title:   getTitle(item),
-			Summary: getSummary(item),
-			Authors: getAuthors(item),
-			Link:    getLink(item),
-			Date:    getDate(item),
+			SourceID: sourceID,
+			Title:    getTitle(item),
+			Summary:  getSummary(item),
+			Authors:  getAuthors(item),
+			Link:     getLink(item),
+			Date:     getDate(item),
 		}
 
 		articles = append(articles, article)
