@@ -2,6 +2,7 @@ package feed
 
 import (
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -70,3 +71,23 @@ func filterOldArticles(articles []Article, years, month, days int ) []Article {
 
 	return filtered
 }
+
+func limitAuthors(perAuthor int, articles []Article) []Article {
+	articles = sortByWeightedScore("desc", articles)
+
+	seen := map[string]int{}
+	limited := []Article{}
+	for _, article := range articles {
+		if len(article.Authors) == 0 {
+			limited = append(limited, article)
+			continue
+		}
+		key := strings.ToLower(article.Authors[0].Name)
+		if seen[key] < perAuthor {
+			seen[key]++
+			limited = append(limited, article)
+		}
+	}
+
+	return limited
+} 

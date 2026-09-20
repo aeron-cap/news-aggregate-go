@@ -27,7 +27,7 @@ func BuildFeed(ctx context.Context, s *database.Store, articles []Article) error
 		articles[i].WeightedScore = weightedScore(articles[i])
 	}
 
-	articles = giveTopArticles(10, filterOldArticles(articles, 1, 0, 0))
+	articles = giveTopArticles(10, limitAuthors(1, filterOldArticles(articles, 1, 0, 0)))
 
 	dbArticles := make([]database.Article, 0, len(articles))
 	
