@@ -211,7 +211,7 @@ func (s *Store) GetUnreadArticles(ctx context.Context) ([]Article, error) {
                weighted_score, batch_date, created_at, read_at
         FROM articles
         WHERE read_at IS NULL
-        ORDER BY weighted_score DESC
+        ORDER BY batch_date DESC, weighted_score DESC
     `
 
 	rows, err := s.db.QueryContext(ctx, stmt)

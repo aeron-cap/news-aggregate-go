@@ -38,6 +38,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health)
 	mux.HandleFunc("GET /build-feed", app.buildFeed)
+	mux.HandleFunc("GET /today", app.fetchFeed)
 	
 	srv := &http.Server{
 		Addr: ":6767",
@@ -55,7 +56,6 @@ func main() {
 }
 
 // TODOs
-// add a limiter for how much an author shows up
 // i think we cant get the html to parse, so we just need headline + other info and a link to main source
 // interaction with fetched articles affect algorithm
 // add blacklist

@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"database/sql"
 	"sort"
 	"strings"
 	"time"
@@ -90,4 +91,18 @@ func limitAuthors(perAuthor int, articles []Article) []Article {
 	}
 
 	return limited
-} 
+}
+
+func NullString(n sql.NullString) *string {
+	if !n.Valid {
+		return nil
+	}
+	return &n.String
+}
+
+func NullTime(n sql.NullTime) *time.Time {
+	if !n.Valid {
+		return nil
+	}
+	return &n.Time
+}
