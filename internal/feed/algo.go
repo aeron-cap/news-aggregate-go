@@ -19,9 +19,9 @@ const (
 	titleWeight   = 3.0
 	contentWeight = 2.0
 	urlWeight     = 1.0
-	halfLifeHours = 24.0
-	relevanceW    = 0.6
-	recencyW      = 0.4
+	halfLifeHours = 148.0
+	relevanceW    = 0.5
+	recencyW      = 0.5
 )
 
 func NewInterestConfig(keywords []database.Interest) InterestConfig {

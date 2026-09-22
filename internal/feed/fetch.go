@@ -199,13 +199,13 @@ func isRefreshNeeded(ctx context.Context, store *database.Store) (bool, error) {
 		return false, fmt.Errorf("failed to count unread articles: %w", err)
 	}
 
-	lastFetch, err := store.GetLastFetchDate(ctx)
+	lastFetch, err := store.GetLastSourceDate(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to get last fetch: %w", err)
 	}
 
 	needBuffer := unread < 10
-	isStale := time.Since(lastFetch) > time.Hour
+	isStale := time.Since(lastFetch) > 12*time.Hour
 
-	return needBuffer && isStale, nil
+	return needBuffer || isStale, nil
 }

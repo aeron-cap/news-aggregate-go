@@ -21,3 +21,11 @@ func (f *feedCache) set(val []byte, ttl time.Duration) {
 	f.value = val
 	f.validUntil = time.Now().Add(ttl)
 }
+
+func (f *feedCache) clear() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.value = nil
+	f.validUntil = time.Time{}
+}

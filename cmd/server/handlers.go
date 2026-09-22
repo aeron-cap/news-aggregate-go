@@ -25,6 +25,8 @@ func (a *app) buildFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	a.cache.clear()
+	
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{

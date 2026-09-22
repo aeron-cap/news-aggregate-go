@@ -284,3 +284,26 @@ func (s *Store) GetLastFetchDate(ctx context.Context) (time.Time, error) {
 
 	return parsed, nil
 }
+
+func (s *Store) GetLastSourceDate(ctx context.Context) (time.Time, error) {
+	const stmt = `SELECT MAX(source_date) FROM articles`
+
+	row := s.db.QueryRowContext(ctx, stmt)
+
+	var rawDateTime sql.NullString
+	if err := row.Scan(&rawDateTime); err != nil {
+		return time.Time{}, err
+	}
+
+	if !rawDateTime.Valid {
+		return time.Time{}, nil
+	}
+
+	const sqliteTimestampLayout = "2006-01-02 15:04:05Z07:00"
+	parsed, err := time.Parse(sqliteTimestampLayout, rawDateTime.String)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to parse last fetch date %q: %w", rawDateTime.String, err)
+	}
+
+	return parsed, nil
+}
