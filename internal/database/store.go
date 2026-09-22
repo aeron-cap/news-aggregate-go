@@ -263,7 +263,7 @@ func (s *Store) CountUnreadArticles(ctx context.Context) (int, error) {
 }
 
 func (s *Store) GetLastFetchDate(ctx context.Context) (time.Time, error) {
-	const stmt = `SELECT MAX(batch_date) FROM articles`
+	const stmt = `SELECT MAX(batch_date) FROM articles WHERE read_at IS NOT NULL`
 
 	row := s.db.QueryRowContext(ctx, stmt)
 
@@ -286,7 +286,7 @@ func (s *Store) GetLastFetchDate(ctx context.Context) (time.Time, error) {
 }
 
 func (s *Store) GetLastSourceDate(ctx context.Context) (time.Time, error) {
-	const stmt = `SELECT MAX(source_date) FROM articles`
+	const stmt = `SELECT MAX(source_date) FROM articles WHERE read_at IS NULL`
 
 	row := s.db.QueryRowContext(ctx, stmt)
 
