@@ -45,6 +45,14 @@ type articleResponse struct {
 }
 
 func (a *app) fetchFeed(w http.ResponseWriter, r *http.Request) {
+	data, hit := a.cache.get(r.Context()) 
+	if hit {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(data)
+		return
+	}
+	
 	articles, err := a.store.GetUnreadArticles(r.Context()) 
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -77,6 +85,19 @@ func (a *app) fetchFeed(w http.ResponseWriter, r *http.Request) {
 			SourceName:    feed.NullString(article.SourceName),
 		})
 	}
+
+	b, err := json.Marshal(payload)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Failed to marshal articles",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	a.cache.set(b, 12*time.Hour)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

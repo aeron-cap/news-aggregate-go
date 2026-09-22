@@ -7,13 +7,21 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/aeron-cap/news-aggregator/internal/database"
 )
 
+type feedCache struct {
+	mu			sync.Mutex
+	value		[]byte
+	validUntil	time.Time
+}
+
 type app struct {
 	store *database.Store
+	cache *feedCache
 }
 
 func main() {
@@ -33,6 +41,7 @@ func main() {
 
 	app := &app{
 		store: database.NewStore(db),
+		cache: &feedCache{},
 	}
 	
 	mux := http.NewServeMux()
