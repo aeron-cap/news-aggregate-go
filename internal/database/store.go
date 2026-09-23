@@ -154,9 +154,12 @@ func (s *Store) InsertArticles(ctx context.Context, articles []Article) error {
 	defer tx.Rollback()
 
 	stmt, err := tx.PrepareContext(ctx, `
-        INSERT OR REPLACE INTO articles
+        INSERT INTO articles
         (source_id, title, summary, author, url, source_date, weighted_score, batch_date)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (url) DO UPDATE SET
+        	weighted_score = excluded.weighted_score
+        WHERE excluded.weighted_score > articles.weighted_score
     `)
 	if err != nil {
 		return err
