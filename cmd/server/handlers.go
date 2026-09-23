@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/aeron-cap/news-aggregator/internal/feed"
@@ -105,3 +106,35 @@ func (a *app) fetchFeed(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(payload)
 } 
+
+func (a *app) markAsRead(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+
+	if id == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Invalid article ID",
+		})
+		return
+	}
+
+	err := a.store.MarkArticleAsRead(r.Context(), id)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Failed to mark article as read",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	a.cache.clear()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"details": "Article marked as read successfully",
+	})	
+}
