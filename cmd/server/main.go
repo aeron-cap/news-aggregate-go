@@ -49,6 +49,7 @@ func main() {
 	mux.HandleFunc("GET /build-feed", app.buildFeed)
 	mux.HandleFunc("GET /today", app.fetchFeed)
 	mux.HandleFunc("POST /articles/{id}/read", app.markAsRead)
+	mux.HandleFunc("GET /interests", app.fetchInterests)
 	
 	srv := &http.Server{
 		Addr: ":6767",
