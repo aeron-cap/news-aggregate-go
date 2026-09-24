@@ -73,7 +73,7 @@ type Interest struct {
 }
 
 func (s *Store) GetInterests(ctx context.Context) ([]Interest, error) {
-	const stmt = `SELECT id, keyword, weight, is_main, anchor, is_active FROM interests WHERE weight > 0`
+	const stmt = `SELECT id, keyword, weight, is_main, anchor, is_active FROM interests`
 
 	rows, err := s.db.QueryContext(ctx, stmt)
 	if err != nil {
