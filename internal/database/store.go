@@ -205,8 +205,21 @@ func (s *Store) MarkArticleAsRead(ctx context.Context, articleID int64) error {
 	}
 	defer stmt.Close()
 
-	_, err = stmt.ExecContext(ctx, articleID)
-	return err
+	res, err := stmt.ExecContext(ctx, articleID)
+	if err != nil {
+		return err
+	}
+
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if affected == 0 {
+		return fmt.Errorf("no article found with id %d", articleID)
+	}
+	
+	return nil 
 }
 
 func (s *Store) GetUnreadArticles(ctx context.Context) ([]Article, error) {

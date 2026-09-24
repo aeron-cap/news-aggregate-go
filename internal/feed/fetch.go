@@ -37,21 +37,21 @@ type rawFeed struct {
 	Feed     *gofeed.Feed	
 }
 
-func CreateFeed(store *database.Store) error {
+func CreateFeed(store *database.Store) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	isRefreshNeeded, err := isRefreshNeeded(ctx, store)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !isRefreshNeeded {
-		return nil
+		return false, nil
 	}
 
 	sources, err := store.GetSources(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get sources: %w", err)
+		return false, fmt.Errorf("failed to get sources: %w", err)
 	}
 
 	var workers = len(sources) + 1
@@ -102,10 +102,10 @@ func CreateFeed(store *database.Store) error {
 
 	err = BuildFeed(ctx, store, articles)
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	return nil
+	return true, nil
 }
 
 func parseSourceFeedToArticle(feed *gofeed.Feed, sourceID int64) ([]Article, error) {
