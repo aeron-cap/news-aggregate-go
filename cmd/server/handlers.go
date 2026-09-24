@@ -27,12 +27,48 @@ func (a *app) buildFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.cache.clear()
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
 		"details": "Articles fetched and stored successfully",
 	})
+}
+
+type interestResponse struct {
+	ID       int64   `json:"id"`
+	Keyword  string  `json:"keyword"`
+	Weight   float64 `json:"weight"`
+	IsMain   bool    `json:"is_main"`
+	IsActive bool    `json:"is_active"`
+}
+
+func (a *app) fetchInterests(w http.ResponseWriter, r *http.Request) {
+	interests, err := a.store.GetInterests(r.Context())
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Failed to fetch interests",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	payload := make([]interestResponse, 0, len(interests))
+	for _, interest := range interests {
+		payload = append(payload, interestResponse{
+			ID:       interest.ID,
+			Keyword:  interest.Keyword,
+			Weight:   interest.Weight,
+			IsMain:   interest.IsMain,
+			IsActive: interest.IsActive,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(payload)
 }
 
 type articleResponse struct {
@@ -44,19 +80,19 @@ type articleResponse struct {
 	SourceDate    *time.Time `json:"source_date"`
 	WeightedScore float64    `json:"weighted_score"`
 	BatchDate     time.Time  `json:"batch_date"`
-	SourceName	  *string    `json:"source_name"`
+	SourceName    *string    `json:"source_name"`
 }
 
 func (a *app) fetchFeed(w http.ResponseWriter, r *http.Request) {
-	data, hit := a.cache.get(r.Context()) 
+	data, hit := a.cache.get(r.Context())
 	if hit {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write(data)
 		return
 	}
-	
-	articles, err := a.store.GetUnreadArticles(r.Context()) 
+
+	articles, err := a.store.GetUnreadArticles(r.Context())
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -105,7 +141,7 @@ func (a *app) fetchFeed(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(payload)
-} 
+}
 
 func (a *app) markAsRead(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -114,7 +150,7 @@ func (a *app) markAsRead(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "Invalid article ID",
+			"error": "Invalid article ID",
 		})
 		return
 	}
@@ -136,5 +172,5 @@ func (a *app) markAsRead(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
 		"details": "Article marked as read successfully",
-	})	
+	})
 }
