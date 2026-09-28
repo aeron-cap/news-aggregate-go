@@ -37,10 +37,7 @@ type rawFeed struct {
 	Feed     *gofeed.Feed	
 }
 
-func CreateFeed(store *database.Store) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
+func CreateFeed(ctx context.Context, store *database.Store) (bool, error) {
 	isRefreshNeeded, err := isRefreshNeeded(ctx, store)
 	if err != nil {
 		return false, err
@@ -99,6 +96,10 @@ func CreateFeed(store *database.Store) (bool, error) {
 	close(sc)
 
 	<-done
+
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 
 	err = BuildFeed(ctx, store, articles)
 	if err != nil {

@@ -1,11 +1,13 @@
 package main
 
 import (
-	"context"
 	"time"
 )
 
-func (f *feedCache) get(ctx context.Context) ([]byte, bool) {
+func (f *feedCache) get() ([]byte, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	
 	if time.Now().Before(f.validUntil) {
 		return f.value, true
 	}
@@ -18,6 +20,9 @@ func (f *feedCache) get(ctx context.Context) ([]byte, bool) {
 }
 
 func (f *feedCache) set(val []byte, ttl time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	
 	f.value = val
 	f.validUntil = time.Now().Add(ttl)
 }

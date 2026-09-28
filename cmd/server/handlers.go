@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -10,12 +11,20 @@ import (
 )
 
 func health(w http.ResponseWriter, r *http.Request) {
+	if isShuttingDown.Load() {
+		http.Error(w, "Server is shutting down", http.StatusServiceUnavailable)
+		return
+	}
+	
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
 }
 
 func (a *app) buildFeed(w http.ResponseWriter, r *http.Request) {
-	refreshed, err := feed.CreateFeed(a.store)
+	ctx, cancel := context.WithTimeout(r.Context(), 10 * time.Second)
+	defer cancel()
+	
+	refreshed, err := feed.CreateFeed(ctx, a.store)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -93,7 +102,7 @@ type articleResponse struct {
 }
 
 func (a *app) fetchFeed(w http.ResponseWriter, r *http.Request) {
-	data, hit := a.cache.get(r.Context())
+	data, hit := a.cache.get()
 	if hit {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
