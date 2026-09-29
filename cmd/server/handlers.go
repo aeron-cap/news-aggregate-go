@@ -27,30 +27,21 @@ func (a *app) buildFeed(w http.ResponseWriter, r *http.Request) {
 
 	refreshed, err := feed.CreateFeed(ctx, a.store)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "Failed to fetch articles",
-			"details": err.Error(),
-		})
+		respondWithError(w, http.StatusInternalServerError, "Failed to build feed", err.Error())
 		return
 	}
 
 	if !refreshed {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{
-			"details": "Feed still fresh",
+		respondWithJSON(w, http.StatusOK, map[string]string{
+			"details": "Feed is already up to date",
 		})
 		return
 	}
 
 	a.cache.clear()
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
-		"details": "Articles fetched and stored successfully",
+	respondWithJSON(w, http.StatusOK, map[string]string{
+		"details": "Feed refreshed successfully",
 	})
 }
 
@@ -65,12 +56,7 @@ type interestResponse struct {
 func (a *app) fetchInterests(w http.ResponseWriter, r *http.Request) {
 	interests, err := a.store.GetInterests(r.Context())
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "Failed to fetch interests",
-			"details": err.Error(),
-		})
+		respondWithError(w, http.StatusInternalServerError, "Failed to fetch interests", err.Error())
 		return
 	}
 
@@ -85,9 +71,7 @@ func (a *app) fetchInterests(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(payload)
+	respondWithJSON(w, http.StatusOK, payload)
 }
 
 type articleResponse struct {
@@ -105,27 +89,20 @@ type articleResponse struct {
 func (a *app) fetchFeed(w http.ResponseWriter, r *http.Request) {
 	data, hit := a.cache.get()
 	if hit {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write(data)
+		respondWithJSON(w, http.StatusOK, json.RawMessage(data))
 		return
 	}
 
 	articles, err := a.store.GetUnreadArticles(r.Context())
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "Failed to fetch articles",
-			"details": err.Error(),
-		})
+		respondWithError(w, http.StatusInternalServerError, "Failed to fetch unread articles", err.Error())
 		return
 	}
 
 	if len(articles) == 0 {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode([]articleResponse{})
+		respondWithJSON(w, http.StatusOK, map[string]string{
+			"details": "No unread articles available",
+		})
 		return
 	}
 
@@ -146,50 +123,32 @@ func (a *app) fetchFeed(w http.ResponseWriter, r *http.Request) {
 
 	b, err := json.Marshal(payload)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "Failed to marshal articles",
-			"details": err.Error(),
-		})
+		respondWithError(w, http.StatusInternalServerError, "Failed to marshal articles", err.Error())
 		return
 	}
 
 	a.cache.set(b, 12*time.Hour)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(payload)
+	respondWithJSON(w, http.StatusOK, payload)
 }
 
 func (a *app) markAsRead(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 
 	if id == 0 {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "Invalid article ID",
-		})
+		respondWithError(w, http.StatusBadRequest, "Invalid article ID", "ID must be a positive integer")
 		return
 	}
 
 	err := a.store.MarkArticleAsRead(r.Context(), id)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "Failed to mark article as read",
-			"details": err.Error(),
-		})
+		respondWithError(w, http.StatusInternalServerError, "Failed to mark article as read", err.Error())
 		return
 	}
 
 	a.cache.clear()
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
+	respondWithJSON(w, http.StatusOK, map[string]string{
 		"details": "Article marked as read successfully",
 	})
 }
@@ -205,54 +164,33 @@ func (a *app) changeInterest(w http.ResponseWriter, r *http.Request) {
 	var payload interestPayload
 	err := json.NewDecoder(r.Body).Decode(&payload)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "Invalid request payload",
-			"details": err.Error(),
-		})
+		respondWithError(w, http.StatusBadRequest, "Invalid request payload", err.Error())
 		return
 	}
 
 	id := payload.ID
 	isActive := payload.IsActive
-	
+
 	if id <= 0 {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "Invalid interest ID",
-		})
+		respondWithError(w, http.StatusBadRequest, "Invalid interest ID", "ID must be a positive integer")
 		return
 	}
 
 	err = a.store.UpdateInterestActivation(r.Context(), id, isActive)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "Failed to update interest activation",
-			"details": err.Error(),
-		})
+		respondWithError(w, http.StatusInternalServerError, "Failed to update interest activation", err.Error())
 		return
 	}
 
 	err = scripts.RunResnik(r.Context(), "internal/scripts/resnik.py")
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "Failed to run resnik script",
-			"details": err.Error(),
-		})
+		respondWithError(w, http.StatusInternalServerError, "Failed to run resnik script", err.Error())
 		return
 	}
-	
+
 	a.cache.clear()
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
-		"details": "Interest updated successfully",
+	respondWithJSON(w, http.StatusOK, map[string]string{
+		"details": "Interest activation updated and resnik script executed successfully",
 	})
 }
