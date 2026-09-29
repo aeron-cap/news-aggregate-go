@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/aeron-cap/news-aggregator/internal/feed"
+	"github.com/aeron-cap/news-aggregator/internal/scripts"
 )
 
 func health(w http.ResponseWriter, r *http.Request) {
@@ -15,15 +16,15 @@ func health(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Server is shutting down", http.StatusServiceUnavailable)
 		return
 	}
-	
+
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
 }
 
 func (a *app) buildFeed(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 10 * time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	
+
 	refreshed, err := feed.CreateFeed(ctx, a.store)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -190,5 +191,68 @@ func (a *app) markAsRead(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
 		"details": "Article marked as read successfully",
+	})
+}
+
+type interestPayload struct {
+	ID       int64 `json:"id"`
+	IsActive bool  `json:"is_active"`
+}
+
+func (a *app) changeInterest(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
+
+	var payload interestPayload
+	err := json.NewDecoder(r.Body).Decode(&payload)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Invalid request payload",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	id := payload.ID
+	isActive := payload.IsActive
+	
+	if id <= 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Invalid interest ID",
+		})
+		return
+	}
+
+	err = a.store.UpdateInterestActivation(r.Context(), id, isActive)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Failed to update interest activation",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	err = scripts.RunResnik(r.Context(), "internal/scripts/resnik.py")
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Failed to run resnik script",
+			"details": err.Error(),
+		})
+		return
+	}
+	
+	a.cache.clear()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"details": "Interest updated successfully",
 	})
 }

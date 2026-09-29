@@ -9,6 +9,7 @@ func routes(app *app) *http.ServeMux {
 	mux.HandleFunc("GET /today", app.fetchFeed)
 	mux.HandleFunc("POST /articles/{id}/read", app.markAsRead)
 	mux.HandleFunc("GET /interests", app.fetchInterests)
+	mux.HandleFunc("POST /change-interest", app.changeInterest)
 
 	return mux
 }
