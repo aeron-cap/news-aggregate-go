@@ -10,6 +10,7 @@ Feel free to contribute by opening issues or pull requests, but please be aware 
 
 Rough roadmap:
 - [ ] Frontend
+- [ ] Tests
 - [ ] Add more sources
 - [ ] Improve NLP scoring
 - [ ] Attach preferences to cookies
