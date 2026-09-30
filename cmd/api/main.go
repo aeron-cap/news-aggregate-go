@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -26,6 +26,7 @@ type feedCache struct {
 type app struct {
 	store *database.Store
 	cache *feedCache
+	logger *slog.Logger
 }
 
 const (
@@ -40,14 +41,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	
 	dbPath := filepath.Join("internal/database", "news.db")
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		fmt.Printf("Failed to create database directory: %v\n", err)
+		logger.Error("Failed to create database directory: %v\n", err)
 	}
-
+	
 	db, err := database.Open(ctx, dbPath)
 	if err != nil {
-		log.Fatalf("Failed to open database: %v", err)
+		logger.Error("Failed to open database: %v", err)
 		return
 	}
 	defer db.Close()
@@ -55,6 +58,7 @@ func main() {
 	app := &app{
 		store: database.NewStore(db),
 		cache: &feedCache{},
+		logger: logger,
 	}
 	
 	mux := routes(app)
@@ -73,7 +77,7 @@ func main() {
 	}
 
 	go func() {
-		log.Println("Starting server on :6767")
+		logger.Info("Starting server on :6767")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			panic(err)
 		}
@@ -82,19 +86,19 @@ func main() {
 	<-ctx.Done()
 	stop()
 	isShuttingDown.Store(true)
-	log.Println("Received shutdown signal, shutting down.")
+	logger.Info("Received shutdown signal, shutting down.")
 
 	time.Sleep(_readinessDrainDelay)
-	log.Println("Readiness check propagated, now waiting for ongoing requests to finish.")
+	logger.Info("Readiness check propagated, now waiting for ongoing requests to finish.")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), _shutdownPeriod)
 	defer cancel()
 	err = srv.Shutdown(shutdownCtx)
 	stopOngoingGracefully()
 	if err != nil {
-		log.Println("Failed to wait for ongoing requests to finish, waiting for forced cancellation.")
+		logger.Info("Failed to wait for ongoing requests to finish, waiting for forced cancellation.")
 		time.Sleep(_shutdownHardPeriod)
 	}
 
-	log.Println("Server shut down gracefully.")
+	logger.Info("Server shut down gracefully.")
 }
