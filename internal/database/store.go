@@ -23,8 +23,14 @@ type Source struct {
 }
 
 func (s *Store) GetSources(ctx context.Context) ([]Source, error) {
-	const stmt = `SELECT id, name, url, is_active FROM sources WHERE is_active = 1`
+	return s.getSources(ctx, `SELECT id, name, url, is_active FROM sources WHERE is_active = 1 ORDER BY id`)
+}
 
+func (s *Store) GetAllSources(ctx context.Context) ([]Source, error) {
+	return s.getSources(ctx, `SELECT id, name, url, is_active FROM sources ORDER BY id`)
+}
+
+func (s *Store) getSources(ctx context.Context, stmt string) ([]Source, error) {
 	rows, err := s.db.QueryContext(ctx, stmt)
 	if err != nil {
 		return nil, err
@@ -47,8 +53,20 @@ func (s *Store) GetSources(ctx context.Context) ([]Source, error) {
 	return sources, nil
 }
 
-func (s *Store) InsertSources(ctx context.Context, sources []Source) error {
-	stmt, err := s.db.PrepareContext(ctx, `INSERT INTO sources (name, url, is_active) VALUES (?, ?, ?)`)
+type SourcesUpdate struct {
+	Name     string `json:"name"`
+	URL      string `json:"url"`
+	IsActive bool   `json:"is_active"`
+}
+
+func (s *Store) InsertSources(ctx context.Context, sources []SourcesUpdate) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO sources (name, url, is_active) VALUES (?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -60,7 +78,37 @@ func (s *Store) InsertSources(ctx context.Context, sources []Source) error {
 		}
 	}
 
-	return nil
+	return tx.Commit()
+}
+
+func (s *Store) UpdateSources(ctx context.Context, updates map[int64]SourcesUpdate) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, `UPDATE sources SET name = ?, url = ?, is_active = ? WHERE id = ?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for id, update := range updates {
+		result, err := stmt.ExecContext(ctx, update.Name, update.URL, update.IsActive, id)
+		if err != nil {
+			return err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if affected == 0 {
+			return fmt.Errorf("no source found with id %d: %w", id, sql.ErrNoRows)
+		}
+	}
+
+	return tx.Commit()
 }
 
 type Interest struct {
