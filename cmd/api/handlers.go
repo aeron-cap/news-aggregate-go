@@ -104,9 +104,7 @@ func (a *app) fetchFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(articles) == 0 {
-		respondWithJSON(w, http.StatusOK, map[string]string{
-			"details": "No unread articles available",
-		})
+		respondWithJSON(w, http.StatusOK, []articleResponse{})
 		return
 	}
 

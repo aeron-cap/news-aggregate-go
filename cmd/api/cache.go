@@ -7,16 +7,16 @@ import (
 func (f *feedCache) get() ([]byte, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	
-	if time.Now().Before(f.validUntil) {
-		return f.value, true
+
+	if f.value == nil {
+		return nil, false
 	}
 
-	if f.value != nil {
-		return f.value, true
+	if time.Now().After(f.validUntil) {
+		return nil, false
 	}
 
-	return nil, false
+	return f.value, true
 }
 
 func (f *feedCache) set(val []byte, ttl time.Duration) {

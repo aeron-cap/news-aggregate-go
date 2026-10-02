@@ -11,5 +11,5 @@ func routes(app *app) http.Handler {
 	mux.HandleFunc("GET /interests", app.fetchInterests)
 	mux.HandleFunc("POST /change-interest", app.changeInterest)
 
-	return app.logging(mux)
+	return app.cors(app.logging(mux))
 }
