@@ -1,14 +1,9 @@
 import { useEffect, useState } from 'react'
 import { changeInterests, fetchInterests } from '../../api'
 import type { InterestUpdate } from '../../api'
-
-interface Interest {
-  id: number
-  keyword: string
-  weight: number
-  is_main: boolean
-  is_active: boolean
-}
+import SearchInput from './SearchInput'
+import { filterAndSortInterests } from '../utils/interests'
+import type { Interest, InterestSort, InterestSortKey } from '../utils/interests'
 
 function Interests() {
   const [interests, setInterests] = useState<Interest[]>([])
@@ -19,6 +14,8 @@ function Interests() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+  const [sort, setSort] = useState<InterestSort>({ key: 'name', direction: 'asc' })
 
   useEffect(() => {
     let active = true
@@ -46,6 +43,7 @@ function Interests() {
 
   const editing = draft !== null
   const displayedInterests = draft ?? interests
+  const visibleInterests = filterAndSortInterests(displayedInterests, search, sort)
   const activeCount = displayedInterests.filter((interest) => interest.is_active).length
   const changedInterests = (draft ?? []).filter((interest) => {
     const original = interests.find((item) => item.id === interest.id)
@@ -58,6 +56,21 @@ function Interests() {
       : editing
         ? `${changedInterests.length} ${changedInterests.length === 1 ? 'interest' : 'interests'} changed · Toggle role or status, then save.`
         : 'Main interests guide your feed; supporting interests add related topics.')
+
+  function changeSort(key: InterestSortKey) {
+    setSort((current) => ({
+      key,
+      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+    }))
+  }
+
+  function sortDirection(key: InterestSortKey) {
+    return sort.key === key ? sort.direction === 'asc' ? 'ascending' : 'descending' : undefined
+  }
+
+  function sortIndicator(key: InterestSortKey) {
+    return sort.key === key ? sort.direction === 'asc' ? '↑' : '↓' : '↕'
+  }
 
   function startEditing() {
     setDraft(interests.map((interest) => ({ ...interest })))
@@ -171,6 +184,12 @@ function Interests() {
               {saving ? 'Saving…' : 'Save changes'}
             </button>
           </div>
+          <div className="interests-search-row">
+            <SearchInput value={search} onChange={setSearch} label="Search interests" />
+            <p className="interests-search-count" role="status">
+              {visibleInterests.length} of {interests.length}
+            </p>
+          </div>
           <div className="interests-table-wrapper" role="region" aria-label="All interests" tabIndex={0}>
             <table className="interests-table">
               <caption>All interests</caption>
@@ -181,13 +200,30 @@ function Interests() {
               </colgroup>
               <thead>
                 <tr>
-                  <th scope="col">Keyword</th>
-                  <th scope="col">Role</th>
-                  <th scope="col">Status</th>
+                  <th scope="col" aria-sort={sortDirection('name')}>
+                    <button className="interest-sort-button" type="button" onClick={() => changeSort('name')} aria-label="Sort by name">
+                      Name <span aria-hidden="true">{sortIndicator('name')}</span>
+                    </button>
+                  </th>
+                  <th scope="col" aria-sort={sortDirection('role')}>
+                    <button className="interest-sort-button" type="button" onClick={() => changeSort('role')} aria-label="Sort by role">
+                      Role <span aria-hidden="true">{sortIndicator('role')}</span>
+                    </button>
+                  </th>
+                  <th scope="col" aria-sort={sortDirection('status')}>
+                    <button className="interest-sort-button" type="button" onClick={() => changeSort('status')} aria-label="Sort by status">
+                      Status <span aria-hidden="true">{sortIndicator('status')}</span>
+                    </button>
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {displayedInterests.map((interest) => (
+                {visibleInterests.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="interests-no-results">No interests match “{search.trim()}”.</td>
+                  </tr>
+                )}
+                {visibleInterests.map((interest) => (
                   <tr key={interest.id}>
                     <th scope="row">{interest.keyword}</th>
                     <td>

@@ -29,6 +29,27 @@
 .interests-feedback.is-success { color: #414d40; }
 .interests-feedback.is-error { color: #963c32; }
 
+.interests-search-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.interests-search-row .search-field { flex: 1; }
+.interests-search-count { min-width: 64px; margin: 0; color: #686c63; font-size: 12px; text-align: right; white-space: nowrap; }
+.interest-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.interest-sort-button span { width: 10px; color: #506456; letter-spacing: 0; }
+.interest-sort-button:hover { color: #414d40; }
+.interest-sort-button:focus-visible { outline-offset: 3px; }
+.interests-table .interests-no-results { padding: 24px 0; color: #686c63; text-align: center; }
+
 .interest-value {
   display: inline-flex;
   vertical-align: middle;
