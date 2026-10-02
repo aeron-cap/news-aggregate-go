@@ -44,12 +44,12 @@ func main() {
 	
 	dbPath := filepath.Join("internal/database", "news.db")
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		logger.Error("Failed to create database directory: %v\n", err)
+		logger.Error("Failed to create database directory", "err", err)
 	}
 	
 	db, err := database.Open(sigCtx, dbPath)
 	if err != nil {
-		logger.Error("Failed to open database: %v", err)
+		logger.Error("Failed to open database", "err", err)
 		return
 	}
 	defer db.Close()

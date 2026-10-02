@@ -27,11 +27,13 @@ func (a *app) buildFeed(w http.ResponseWriter, r *http.Request) {
 
 	refreshed, err := feed.CreateFeed(ctx, a.store)
 	if err != nil {
+		a.logger.ErrorContext(ctx, "build feed failed", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to build feed", err.Error())
 		return
 	}
 
 	if !refreshed {
+		a.logger.InfoContext(ctx, "feed is already up to date")
 		respondWithJSON(w, http.StatusOK, map[string]string{
 			"details": "Feed is already up to date",
 		})
@@ -56,6 +58,7 @@ type interestResponse struct {
 func (a *app) fetchInterests(w http.ResponseWriter, r *http.Request) {
 	interests, err := a.store.GetInterests(r.Context())
 	if err != nil {
+		a.logger.ErrorContext(r.Context(), "fetch interests failed", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch interests", err.Error())
 		return
 	}
@@ -95,6 +98,7 @@ func (a *app) fetchFeed(w http.ResponseWriter, r *http.Request) {
 
 	articles, err := a.store.GetUnreadArticles(r.Context())
 	if err != nil {
+		a.logger.ErrorContext(r.Context(), "fetch unread articles failed", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch unread articles", err.Error())
 		return
 	}
@@ -123,6 +127,7 @@ func (a *app) fetchFeed(w http.ResponseWriter, r *http.Request) {
 
 	b, err := json.Marshal(payload)
 	if err != nil {
+		a.logger.ErrorContext(r.Context(), "marshal articles failed", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to marshal articles", err.Error())
 		return
 	}
@@ -136,12 +141,14 @@ func (a *app) markAsRead(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 
 	if id == 0 {
+		a.logger.WarnContext(r.Context(), "invalid article id", "id_raw", r.PathValue("id"))
 		respondWithError(w, http.StatusBadRequest, "Invalid article ID", "ID must be a positive integer")
 		return
 	}
 
 	err := a.store.MarkArticleAsRead(r.Context(), id)
 	if err != nil {
+		a.logger.ErrorContext(r.Context(), "mark article as read failed", "id", id, "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to mark article as read", err.Error())
 		return
 	}
@@ -164,6 +171,7 @@ func (a *app) changeInterest(w http.ResponseWriter, r *http.Request) {
 	var payload interestPayload
 	err := json.NewDecoder(r.Body).Decode(&payload)
 	if err != nil {
+		a.logger.WarnContext(r.Context(), "invalid interest payload", "err", err)
 		respondWithError(w, http.StatusBadRequest, "Invalid request payload", err.Error())
 		return
 	}
@@ -172,18 +180,21 @@ func (a *app) changeInterest(w http.ResponseWriter, r *http.Request) {
 	isActive := payload.IsActive
 
 	if id <= 0 {
+		a.logger.WarnContext(r.Context(), "invalid interest id", "id", id)
 		respondWithError(w, http.StatusBadRequest, "Invalid interest ID", "ID must be a positive integer")
 		return
 	}
 
 	err = a.store.UpdateInterestActivation(r.Context(), id, isActive)
 	if err != nil {
+		a.logger.ErrorContext(r.Context(), "update interest activation failed", "id", id, "is_active", isActive, "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to update interest activation", err.Error())
 		return
 	}
 
 	err = scripts.RunResnik(r.Context(), "internal/scripts/resnik.py")
 	if err != nil {
+		a.logger.ErrorContext(r.Context(), "run resnik script failed", "id", id, "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to run resnik script", err.Error())
 		return
 	}

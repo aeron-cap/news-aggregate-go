@@ -2,7 +2,7 @@ package main
 
 import "net/http"
 
-func routes(app *app) *http.ServeMux {
+func routes(app *app) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", health)
 	mux.HandleFunc("GET /build-feed", app.buildFeed)
@@ -11,5 +11,5 @@ func routes(app *app) *http.ServeMux {
 	mux.HandleFunc("GET /interests", app.fetchInterests)
 	mux.HandleFunc("POST /change-interest", app.changeInterest)
 
-	return mux
+	return app.logging(mux)
 }
