@@ -1,11 +1,24 @@
-#interests .section-heading { margin: 18px 0 12px; gap: 12px; }
-.interests-actions { display: grid; grid-template-columns: 84px 112px; gap: 8px; flex-shrink: 0; }
-.interests-actions .refresh-button { padding: 6px 10px; font-size: 12px; line-height: 18px; white-space: nowrap; }
-.interests-save-button { background: #506456; border-color: #506456; color: #fff; }
+#interests .section-heading { gap: 12px; }
+.interests-title { display: flex; align-items: center; gap: 10px; height: 18px; margin-bottom: 6px; }
+.interests-title h2 { margin: 0; white-space: nowrap; }
+.interests-edit-button { width: 52px; padding: 2px 6px; font-size: 11px; line-height: 18px; }
+.interests-feedback-row { display: flex; align-items: center; gap: 12px; height: 28px; margin-bottom: 10px; }
+.interests-save-button {
+  flex-shrink: 0;
+  width: 112px;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 18px;
+  background: #506456;
+  border-color: #506456;
+  color: #fff;
+}
 .interests-save-button:hover:not(:disabled) { background: #414d40; }
 .interests-feedback {
   height: 20px;
-  margin: 0 0 10px;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
   color: #686c63;
   font-size: 12px;
   line-height: 20px;
@@ -37,7 +50,7 @@
 .interest-role.interest-toggle[aria-pressed='true'] { border-color: #506456; color: #414d40; }
 .interest-toggle:hover:not(:disabled) { border-color: #506456; }
 .interest-toggle:disabled { opacity: .55; cursor: wait; }
-.interest-toggle:focus-visible, .interests-actions button:focus-visible {
+.interest-toggle:focus-visible, .interests-edit-button:focus-visible, .interests-save-button:focus-visible {
   outline: 2px solid #506456;
   outline-offset: 3px;
 }
@@ -105,7 +118,8 @@
 .interest-skeleton span:last-child { width: 15%; }
 
 @media (max-width: 640px) {
-  #interests .section-heading { align-items: flex-start; flex-direction: column; }
+  .interests-title { gap: 6px; }
+  .interests-title h2 { font-size: 11px; letter-spacing: 1px; }
   .interest-role-column { width: 92px; }
   .interest-status-column { width: 80px; }
   .interests-table th, .interests-table td { padding: 6px 4px; }

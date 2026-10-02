@@ -103,29 +103,30 @@ function Interests() {
     <main id="interests" aria-busy={loading || saving}>
       <div className="section-heading">
         <div>
-          <h2>Your interests</h2>
+          <div className="interests-title">
+            <h2>Your interests</h2>
+            <button
+              className="refresh-button interests-edit-button"
+              type="button"
+              aria-label={editing ? 'Cancel interest edits' : 'Edit interests'}
+              disabled={loading || saving || !!error || interests.length === 0}
+              onClick={editing ? cancelEditing : startEditing}
+            >
+              {editing ? 'Cancel' : 'Edit'}
+            </button>
+          </div>
           <p aria-live="polite">
             {loading ? 'Gathering your interests…' : error ? 'Interests unavailable' : `${interests.length} ${interests.length === 1 ? 'interest' : 'interests'} · ${activeCount} active`}
           </p>
         </div>
-        <div className="interests-actions">
-          <button
-            className="refresh-button"
-            type="button"
-            disabled={loading || saving}
-            onClick={editing ? cancelEditing : () => setRefresh((value) => value + 1)}
-          >
-            {editing ? 'Cancel' : loading ? 'Loading…' : 'Refresh'}
-          </button>
-          <button
-            className={`refresh-button${editing ? ' interests-save-button' : ''}`}
-            type="button"
-            disabled={loading || saving || !!error || interests.length === 0 || (editing && changedInterests.length === 0)}
-            onClick={editing ? () => void saveChanges() : startEditing}
-          >
-            {editing ? saving ? 'Saving…' : 'Save changes' : 'Edit interests'}
-          </button>
-        </div>
+        <button
+          className="refresh-button"
+          type="button"
+          disabled={loading || saving || editing}
+          onClick={() => setRefresh((value) => value + 1)}
+        >
+          {loading ? 'Loading…' : 'Refresh'}
+        </button>
       </div>
 
       {loading ? (
@@ -152,13 +153,24 @@ function Interests() {
         </div>
       ) : (
         <>
-          <p
-            className={`interests-feedback${saveError ? ' is-error' : notice ? ' is-success' : ''}`}
-            role={saveError ? 'alert' : 'status'}
-            title={feedback}
-          >
-            {feedback}
-          </p>
+          <div className="interests-feedback-row">
+            <p
+              className={`interests-feedback${saveError ? ' is-error' : notice ? ' is-success' : ''}`}
+              role={saveError ? 'alert' : 'status'}
+              title={feedback}
+            >
+              {feedback}
+            </p>
+            <button
+              className="refresh-button interests-save-button"
+              type="button"
+              style={{ visibility: editing ? 'visible' : 'hidden' }}
+              disabled={!editing || saving || changedInterests.length === 0}
+              onClick={() => void saveChanges()}
+            >
+              {saving ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
           <div className="interests-table-wrapper" role="region" aria-label="All interests" tabIndex={0}>
             <table className="interests-table">
               <caption>All interests</caption>

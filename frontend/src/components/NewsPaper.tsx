@@ -57,10 +57,10 @@ function NewsPaper() {
   }, [edition])
 
   return (
-      <main id="headlines" aria-busy={loading}>
+      <main id="feed" aria-busy={loading}>
         <div className="section-heading">
           <div>
-            <h2>Today’s headlines</h2>
+            <h2>Your feed</h2>
             <p aria-live="polite">
               {loading ? 'Gathering the latest stories…' : error ? 'Feed unavailable' : `${articles.length} ${articles.length === 1 ? 'story' : 'stories'} to explore`}
             </p>
@@ -87,7 +87,7 @@ function NewsPaper() {
           </div>
         ) : error ? (
           <div className="feed-message" role="alert">
-            <h3>The headlines couldn’t make it here.</h3>
+            <h3>Your feed couldn’t make it here.</h3>
             <p>{error}. Check that the API is running at localhost:6767, then try again.</p>
             <button type="button" className="refresh-button" onClick={() => setEdition((value) => value + 1)}>
               Try again

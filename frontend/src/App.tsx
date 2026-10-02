@@ -4,13 +4,22 @@ import NewsPaper from './components/NewsPaper'
 import './styles/NewsPaper.css'
 import './styles/Interests.css'
 
+type Page = 'feed' | 'interests'
+
+function currentPage(): Page {
+  return window.location.hash === '#/interests' ? 'interests' : 'feed'
+}
+
 function App() {
   const [today] = useState(() => new Date())
-  const [page, setPage] = useState(() => window.location.hash === '#/interests' ? 'interests' : 'headlines')
+  const [page, setPage] = useState(currentPage)
+  const [visitedPages, setVisitedPages] = useState(() => new Set<Page>([page]))
 
   useEffect(() => {
     function updatePage() {
-      setPage(window.location.hash === '#/interests' ? 'interests' : 'headlines')
+      const nextPage = currentPage()
+      setPage(nextPage)
+      setVisitedPages((visited) => visited.has(nextPage) ? visited : new Set([...visited, nextPage]))
     }
 
     window.addEventListener('hashchange', updatePage)
@@ -33,11 +42,16 @@ function App() {
       </header>
 
       <nav className="page-navigation" aria-label="Main navigation">
-        <a href="#/" aria-current={page === 'headlines' ? 'page' : undefined}>Headlines</a>
+        <a href="#/" aria-current={page === 'feed' ? 'page' : undefined}>Feed</a>
         <a href="#/interests" aria-current={page === 'interests' ? 'page' : undefined}>Interests</a>
       </nav>
 
-      {page === 'interests' ? <Interests /> : <NewsPaper />}
+      <div hidden={page !== 'feed'}>
+        {visitedPages.has('feed') && <NewsPaper />}
+      </div>
+      <div hidden={page !== 'interests'}>
+        {visitedPages.has('interests') && <Interests />}
+      </div>
 
       <footer className="newspaper-footer">
         <span>The Daily Brief</span>
