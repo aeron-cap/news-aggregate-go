@@ -37,7 +37,7 @@ const (
 var isShuttingDown atomic.Bool
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	sigCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -47,7 +47,7 @@ func main() {
 		logger.Error("Failed to create database directory: %v\n", err)
 	}
 	
-	db, err := database.Open(ctx, dbPath)
+	db, err := database.Open(sigCtx, dbPath)
 	if err != nil {
 		logger.Error("Failed to open database: %v", err)
 		return
@@ -62,7 +62,7 @@ func main() {
 	
 	mux := routes(app)
 	
-	ongoingCtx, stopOngoingGracefully := context.WithCancel(context.Background())
+	ongoingCtx, stopOngoingGracefully := context.WithCancel(sigCtx)
 	
 	srv := &http.Server{
 		Addr: ":6767",
@@ -82,7 +82,7 @@ func main() {
 		}
 	}()
 
-	<-ctx.Done()
+	<-sigCtx.Done()
 	stop()
 	isShuttingDown.Store(true)
 	logger.Info("Received shutdown signal, shutting down.")
@@ -90,7 +90,7 @@ func main() {
 	time.Sleep(_readinessDrainDelay)
 	logger.Info("Readiness check propagated, now waiting for ongoing requests to finish.")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), _shutdownPeriod)
+	shutdownCtx, cancel := context.WithTimeout(ongoingCtx, _shutdownPeriod)
 	defer cancel()
 	err = srv.Shutdown(shutdownCtx)
 	stopOngoingGracefully()
