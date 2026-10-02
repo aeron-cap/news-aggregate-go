@@ -132,9 +132,10 @@
 
 .article-footer {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  align-items: baseline;
-  gap: 16px;
+  align-items: center;
+  gap: 8px 16px;
   margin-top: auto;
   padding-top: 12px;
   font-size: 12px;
@@ -150,6 +151,36 @@
 }
 .read-link:hover { text-decoration: underline; }
 .read-link span { margin-left: 5px; }
+
+.article-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 12px;
+  margin-left: auto;
+}
+.article-read-prompt { display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; }
+.article-read-question { width: 80px; flex-shrink: 0; color: #686c63; font-size: 11px; white-space: nowrap; }
+.article-read-choice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #cccfc4;
+  border-radius: 4px;
+  background: transparent;
+  color: #686c63;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+.article-read-choice.is-confirm { color: #506456; }
+.article-read-choice:hover:not(:disabled) { background: #eeefe7; border-color: #506456; }
+.article-read-choice:disabled { opacity: .55; cursor: wait; }
+.article-read-error { margin: 8px 0 0; color: #963c32; font-size: 12px; line-height: 1.5; }
 
 .feed-message {
   border-block: 1px solid #deddd5;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchToday } from '../../api'
+import { fetchToday, markArticleAsRead } from '../../api'
 
 interface Article {
   id: number
@@ -27,11 +27,114 @@ function articleDate(value: string | null) {
     : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
+function ArticleCard({ article, onRead }: { article: Article; onRead: (id: number) => Promise<void> }) {
+  const [showReadPrompt, setShowReadPrompt] = useState(false)
+  const [markingRead, setMarkingRead] = useState(false)
+  const [readError, setReadError] = useState<string | null>(null)
+  const href = articleLink(article.url)
+  const date = articleDate(article.source_date)
+
+  function openArticle() {
+    setShowReadPrompt(true)
+  }
+
+  async function confirmRead() {
+    if (markingRead) return
+    setMarkingRead(true)
+    setReadError(null)
+    try {
+      await onRead(article.id)
+    } catch (err) {
+      setReadError(err instanceof Error ? err.message : 'Could not mark article as read')
+    } finally {
+      setMarkingRead(false)
+    }
+  }
+
+  function keepUnread() {
+    setShowReadPrompt(false)
+    setReadError(null)
+  }
+
+  return (
+    <article className="news-article" aria-busy={markingRead}>
+      <div className="article-meta">
+        <span>{article.source_name || 'From the wire'}</span>
+        {date && <time dateTime={article.source_date!}>{date}</time>}
+      </div>
+      <h3>
+        {href ? (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={openArticle}
+            onAuxClick={(event) => { if (event.button === 1) openArticle() }}
+          >
+            {article.title}
+          </a>
+        ) : article.title}
+      </h3>
+      <div className="article-footer">
+        {article.author && <span className="article-author">By {article.author}</span>}
+        {href && (
+          <div className="article-actions">
+            <div
+              className="article-read-prompt"
+              role="group"
+              aria-label={`Did you read ${article.title}?`}
+              aria-hidden={!showReadPrompt}
+              style={{ visibility: showReadPrompt ? 'visible' : 'hidden' }}
+            >
+              <span className="article-read-question" aria-live="polite">
+                {markingRead ? 'Saving…' : 'Did you read it?'}
+              </span>
+              <button
+                className="article-read-choice is-confirm"
+                type="button"
+                aria-label={`Yes, mark ${article.title} as read`}
+                title="Yes, mark as read"
+                disabled={!showReadPrompt || markingRead}
+                onClick={() => void confirmRead()}
+              >
+                <span aria-hidden="true">✓</span>
+              </button>
+              <button
+                className="article-read-choice"
+                type="button"
+                aria-label={`No, keep ${article.title} unread`}
+                title="No, keep unread"
+                disabled={!showReadPrompt || markingRead}
+                onClick={keepUnread}
+              >
+                <span aria-hidden="true">×</span>
+              </button>
+            </div>
+            <a
+              className="read-link"
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Read ${article.title} (opens in a new tab)`}
+              onClick={openArticle}
+              onAuxClick={(event) => { if (event.button === 1) openArticle() }}
+            >
+              Read story <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+        )}
+      </div>
+      {readError && <p className="article-read-error" role="alert">{readError}. Try again.</p>}
+    </article>
+  )
+}
+
 function NewsPaper() {
   const [articles, setArticles] = useState<Article[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [edition, setEdition] = useState(0)
+  const [pendingReads, setPendingReads] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -56,6 +159,16 @@ function NewsPaper() {
     return () => { active = false }
   }, [edition])
 
+  async function confirmArticleRead(id: number) {
+    setPendingReads((count) => count + 1)
+    try {
+      await markArticleAsRead(id)
+      setArticles((current) => current.filter((article) => article.id !== id))
+    } finally {
+      setPendingReads((count) => count - 1)
+    }
+  }
+
   return (
       <main id="feed" aria-busy={loading}>
         <div className="section-heading">
@@ -68,7 +181,7 @@ function NewsPaper() {
           <button
             className="refresh-button"
             type="button"
-            disabled={loading}
+            disabled={loading || pendingReads > 0}
             onClick={() => setEdition((value) => value + 1)}
           >
             {loading ? 'Loading…' : 'Refresh'}
@@ -100,30 +213,9 @@ function NewsPaper() {
           </div>
         ) : (
           <div className="newspaper-content">
-            {articles.map((article) => {
-              const href = articleLink(article.url)
-              const date = articleDate(article.source_date)
-
-              return (
-                <article key={article.id} className="news-article">
-                  <div className="article-meta">
-                    <span>{article.source_name || 'From the wire'}</span>
-                    {date && <time dateTime={article.source_date!}>{date}</time>}
-                  </div>
-                  <h3>
-                    {href ? <a href={href} target="_blank" rel="noopener noreferrer">{article.title}</a> : article.title}
-                  </h3>
-                  <div className="article-footer">
-                    {article.author && <span className="article-author">By {article.author}</span>}
-                    {href && (
-                      <a className="read-link" href={href} target="_blank" rel="noopener noreferrer" aria-label={`Read ${article.title} (opens in a new tab)`}>
-                        Read story <span aria-hidden="true">↗</span>
-                      </a>
-                    )}
-                  </div>
-                </article>
-              )
-            })}
+            {articles.map((article) => (
+              <ArticleCard key={article.id} article={article} onRead={confirmArticleRead} />
+            ))}
           </div>
         )}
       </main>

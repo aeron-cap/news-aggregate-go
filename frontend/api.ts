@@ -6,6 +6,16 @@ export async function fetchToday() {
   return response.json();
 }
 
+export async function markArticleAsRead(id: number) {
+  const response = await fetch(`${API_URL}/articles/${id}/read`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(typeof payload?.error === "string" ? payload.error : "Could not mark article as read");
+  }
+}
+
 export async function fetchInterests() {
   const response = await fetch(`${API_URL}/interests`);
   if (!response.ok) throw new Error("Could not load interests")
