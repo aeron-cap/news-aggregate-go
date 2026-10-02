@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { fetchToday } from '../../api'
-import '../styles/NewsPaper.css'
 
 interface Article {
   id: number
@@ -29,7 +28,6 @@ function articleDate(value: string | null) {
 }
 
 function NewsPaper() {
-  const [today] = useState(() => new Date())
   const [articles, setArticles] = useState<Article[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -59,20 +57,6 @@ function NewsPaper() {
   }, [edition])
 
   return (
-    <div className="newspaper">
-      <header className="newspaper-header">
-        <div className="edition-line">
-          <span>Your daily reading list</span>
-          <time dateTime={today.toLocaleDateString('en-CA')}>
-            {today.toLocaleDateString(undefined, {
-              weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
-            })}
-          </time>
-        </div>
-        <h1>The Daily Brief</h1>
-        <p>A little perspective. A few good reads.</p>
-      </header>
-
       <main id="headlines" aria-busy={loading}>
         <div className="section-heading">
           <div>
@@ -143,12 +127,6 @@ function NewsPaper() {
           </div>
         )}
       </main>
-
-      <footer className="newspaper-footer">
-        <span>The Daily Brief</span>
-        <span>Good stories, less noise.</span>
-      </footer>
-    </div>
   )
 }
 

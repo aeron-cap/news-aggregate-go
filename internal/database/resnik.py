@@ -20,11 +20,12 @@ def fetch_interests():
     cursor.execute("SELECT id, keyword, is_main, anchor, is_active FROM interests")
     rows = cursor.fetchall()
 
+    conn.close()
+
     if not rows:
         print("No interests found in the database.")
         return None
 
-    conn.close()
     return rows
 
 def anchor(kw):
@@ -47,8 +48,8 @@ def calc_weights(interests):
                 best = sim
         raw[kw['keyword']] = best
 
-    max_raw = max(raw.values()) or 1.0
-    weights = {}
+    max_raw = max(raw.values(), default=0.0) or 1.0
+    weights = {kw['keyword']: 0.0 for kw in interests}
     for kw in interests:
         if not kw['is_active']:
             continue

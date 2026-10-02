@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/aeron-cap/news-aggregator/internal/database"
 	"github.com/aeron-cap/news-aggregator/internal/feed"
 	"github.com/aeron-cap/news-aggregator/internal/scripts"
 )
@@ -159,47 +163,74 @@ func (a *app) markAsRead(w http.ResponseWriter, r *http.Request) {
 }
 
 type interestPayload struct {
-	ID       int64 `json:"id"`
-	IsActive bool  `json:"is_active"`
+	IsActive *bool `json:"isActive"`
+	IsMain   *bool `json:"isMain"`
 }
 
-func (a *app) changeInterest(w http.ResponseWriter, r *http.Request) {
+func (a *app) changeInterests(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
 
-	var payload interestPayload
-	err := json.NewDecoder(r.Body).Decode(&payload)
+	var payload map[int64]interestPayload
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	err := decoder.Decode(&payload)
 	if err != nil {
 		a.logger.WarnContext(r.Context(), "invalid interest payload", "err", err)
 		respondWithError(w, http.StatusBadRequest, "Invalid request payload", err.Error())
 		return
 	}
 
-	id := payload.ID
-	isActive := payload.IsActive
-
-	if id <= 0 {
-		a.logger.WarnContext(r.Context(), "invalid interest id", "id", id)
-		respondWithError(w, http.StatusBadRequest, "Invalid interest ID", "ID must be a positive integer")
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		respondWithError(w, http.StatusBadRequest, "Invalid request payload", "Body must contain exactly one JSON object")
 		return
 	}
 
-	err = a.store.UpdateInterestActivation(r.Context(), id, isActive)
-	if err != nil {
-		a.logger.ErrorContext(r.Context(), "update interest activation failed", "id", id, "is_active", isActive, "err", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to update interest activation", err.Error())
+	if len(payload) == 0 {
+		respondWithError(w, http.StatusBadRequest, "Invalid request payload", "At least one interest is required")
 		return
 	}
 
-	err = scripts.RunResnik(r.Context(), "internal/scripts/resnik.py")
+	updates := make(map[int64]database.InterestUpdate, len(payload))
+	for id, interest := range payload {
+		if id <= 0 {
+			a.logger.WarnContext(r.Context(), "invalid interest id", "id", id)
+			respondWithError(w, http.StatusBadRequest, "Invalid interest ID", "IDs must be positive integers")
+			return
+		}
+		
+		if interest.IsActive == nil || interest.IsMain == nil {
+			respondWithError(w, http.StatusBadRequest, "Invalid request payload", "Each interest must include boolean isActive and isMain fields")
+			return
+		}
+		
+		updates[id] = database.InterestUpdate{
+			IsActive: *interest.IsActive,
+			IsMain:   *interest.IsMain,
+		}
+	}
+
+	err = a.store.UpdateInterests(r.Context(), updates)
 	if err != nil {
-		a.logger.ErrorContext(r.Context(), "run resnik script failed", "id", id, "err", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to run resnik script", err.Error())
+		if errors.Is(err, sql.ErrNoRows) {
+			respondWithError(w, http.StatusNotFound, "Interest not found", err.Error())
+			return
+		}
+		a.logger.ErrorContext(r.Context(), "update interests failed", "err", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to update interests", err.Error())
 		return
 	}
 
 	a.cache.clear()
+	defer a.cache.clear()
+
+	err = scripts.RunResnik(r.Context(), "internal/database/resnik.py")
+	if err != nil {
+		a.logger.ErrorContext(r.Context(), "run resnik script failed", "err", err)
+		respondWithError(w, http.StatusInternalServerError, "Interests updated, but weight recalculation failed", err.Error())
+		return
+	}
 
 	respondWithJSON(w, http.StatusOK, map[string]string{
-		"details": "Interest activation updated and resnik script executed successfully",
+		"details": "Interests updated and weights recalculated successfully",
 	})
 }

@@ -9,7 +9,7 @@ func routes(app *app) http.Handler {
 	mux.HandleFunc("GET /today", app.fetchFeed)
 	mux.HandleFunc("POST /articles/{id}/read", app.markAsRead)
 	mux.HandleFunc("GET /interests", app.fetchInterests)
-	mux.HandleFunc("POST /change-interest", app.changeInterest)
+	mux.HandleFunc("POST /change-interests", app.changeInterests)
 
 	return app.cors(app.logging(mux))
 }

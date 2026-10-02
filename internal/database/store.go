@@ -97,34 +97,35 @@ func (s *Store) GetInterests(ctx context.Context) ([]Interest, error) {
 	return interests, nil
 }
 
-func (s *Store) UpdateInterestActivation(ctx context.Context, interestID int64, isActive bool) error {
-	stmt, err := s.db.PrepareContext(ctx, `UPDATE interests SET is_active = ? WHERE id = ?`)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	_, err = stmt.ExecContext(ctx, isActive, interestID)
-	return err
+type InterestUpdate struct {
+	IsActive bool
+	IsMain   bool
 }
 
-func (s *Store) UpdateInterestsActivation(ctx context.Context, interestIDs []int64, isActive bool) error {
+func (s *Store) UpdateInterests(ctx context.Context, updates map[int64]InterestUpdate) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	stmt, err := tx.PrepareContext(ctx, `UPDATE interests SET is_active = ? WHERE id = ?`)
+	stmt, err := tx.PrepareContext(ctx, `UPDATE interests SET is_active = ?, is_main = ? WHERE id = ?`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
-	for _, id := range interestIDs {
-		_, err = stmt.ExecContext(ctx, isActive, id)
+	for id, update := range updates {
+		result, err := stmt.ExecContext(ctx, update.IsActive, update.IsMain, id)
 		if err != nil {
 			return err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if affected == 0 {
+			return fmt.Errorf("no interest found with id %d: %w", id, sql.ErrNoRows)
 		}
 	}
 
@@ -218,8 +219,8 @@ func (s *Store) MarkArticleAsRead(ctx context.Context, articleID int64) error {
 	if affected == 0 {
 		return fmt.Errorf("no article found with id %d", articleID)
 	}
-	
-	return nil 
+
+	return nil
 }
 
 func (s *Store) GetUnreadArticles(ctx context.Context) ([]Article, error) {
