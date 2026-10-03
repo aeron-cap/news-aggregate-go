@@ -25,16 +25,21 @@ const (
 )
 
 func NewInterestConfig(keywords []database.Interest) InterestConfig {
-	patterns := make([]*regexp.Regexp, len(keywords))
+	activeKeywords := make([]database.Interest, 0, len(keywords))
+	patterns := make([]*regexp.Regexp, 0, len(keywords))
 	weights := make(map[string]float64, len(keywords))
 
-	for i, k := range keywords {
-		patterns[i] = regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(k.Keyword) + `\b`)
+	for _, k := range keywords {
+		if !k.IsActive {
+			continue
+		}
+		activeKeywords = append(activeKeywords, k)
+		patterns = append(patterns, regexp.MustCompile(`(?i)\b`+regexp.QuoteMeta(k.Keyword)+`\b`))
 		weights[k.Keyword] = k.Weight
 	}
 
 	return InterestConfig{
-		keywords: keywords,
+		keywords: activeKeywords,
 		patterns: patterns,
 		weights:  weights,
 	}

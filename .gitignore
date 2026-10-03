@@ -3,3 +3,4 @@ internal/database/news.db-shm
 internal/database/news.db-wal
 
 *.exe
+__pycache__/

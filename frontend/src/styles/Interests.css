@@ -1,0 +1,148 @@
+#interests .section-heading { gap: 12px; }
+.interests-title { display: flex; align-items: center; gap: 10px; height: 18px; margin-bottom: 6px; }
+.interests-title h2 { margin: 0; white-space: nowrap; }
+.interests-edit-button { width: 52px; padding: 2px 6px; font-size: 11px; line-height: 18px; }
+.interests-feedback-row { display: flex; align-items: center; gap: 12px; height: 28px; margin-bottom: 10px; }
+.interests-save-button {
+  flex-shrink: 0;
+  width: 112px;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 18px;
+  background: #506456;
+  border-color: #506456;
+  color: #fff;
+}
+.interests-save-button:hover:not(:disabled) { background: #414d40; }
+.interests-feedback {
+  height: 20px;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: #686c63;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.interests-feedback.is-success { color: #414d40; }
+.interests-feedback.is-error { color: #963c32; }
+
+.interests-search-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.interests-search-row .search-field { flex: 1; }
+.interests-search-count { min-width: 64px; margin: 0; color: #686c63; font-size: 12px; text-align: right; white-space: nowrap; }
+.interest-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.interest-sort-button span { width: 10px; color: #506456; letter-spacing: 0; }
+.interest-sort-button:hover { color: #414d40; }
+.interest-sort-button:focus-visible { outline-offset: 3px; }
+.interests-table .interests-no-results { padding: 24px 0; color: #686c63; text-align: center; }
+
+.interest-value {
+  display: inline-flex;
+  vertical-align: middle;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 28px;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #686c63;
+  font: inherit;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.interest-toggle { border-color: #cccfc4; cursor: pointer; }
+.interest-role.interest-toggle[aria-pressed='true'] { border-color: #506456; color: #414d40; }
+.interest-toggle:hover:not(:disabled) { border-color: #506456; }
+.interest-toggle:disabled { opacity: .55; cursor: wait; }
+.interest-toggle:focus-visible, .interests-edit-button:focus-visible, .interests-save-button:focus-visible {
+  outline: 2px solid #506456;
+  outline-offset: 3px;
+}
+
+.interests-table-wrapper { overflow-x: auto; }
+.interests-table-wrapper:focus-visible {
+  outline: 2px solid #506456;
+  outline-offset: 5px;
+}
+
+.interests-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+.interest-role-column { width: 112px; }
+.interest-status-column { width: 96px; }
+
+.interests-table caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.interests-table th, .interests-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #deddd5;
+}
+
+.interests-table th:first-child, .interests-table td:first-child { padding-left: 0; }
+.interests-table th:last-child, .interests-table td:last-child { padding-right: 0; }
+.interests-table thead th {
+  border-top: 1px solid #aaa99f;
+  color: #686c63;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.interests-table tbody th {
+  font: 500 16px/1.35 Georgia, 'Times New Roman', serif;
+  overflow-wrap: anywhere;
+}
+
+.interests-table td { color: #686c63; }
+.interest-status {
+  background: #ecece6;
+}
+.interest-status.is-active { color: #414d40; background: #e5eadf; }
+
+.interest-skeleton {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-top: 1px solid #deddd5;
+}
+.interest-skeleton span { height: 22px; width: 35%; border-radius: 2px; background: #e8e8e0; }
+.interest-skeleton span:last-child { width: 15%; }
+
+@media (max-width: 640px) {
+  .interests-title { gap: 6px; }
+  .interests-title h2 { font-size: 11px; letter-spacing: 1px; }
+  .interest-role-column { width: 92px; }
+  .interest-status-column { width: 80px; }
+  .interests-table th, .interests-table td { padding: 6px 4px; }
+  .interests-table tbody th { font-size: 15px; }
+}
