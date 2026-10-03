@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -16,15 +15,8 @@ import (
 	"github.com/aeron-cap/news-aggregator/internal/database"
 )
 
-type feedCache struct {
-	mu			sync.Mutex
-	value		[]byte
-	validUntil	time.Time
-}
-
 type app struct {
 	store *database.Store
-	cache *feedCache
 	logger *slog.Logger
 }
 
@@ -56,7 +48,6 @@ func main() {
 
 	app := &app{
 		store: database.NewStore(db),
-		cache: &feedCache{},
 		logger: logger,
 	}
 	

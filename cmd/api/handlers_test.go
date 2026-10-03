@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/aeron-cap/news-aggregator/internal/database"
 )
@@ -59,7 +58,6 @@ func TestChangeInterestsMissingIDRollsBack(t *testing.T) {
 	}
 	a := &app{
 		store:  database.NewStore(db),
-		cache:  &feedCache{},
 		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	w := httptest.NewRecorder()
@@ -88,7 +86,7 @@ func sourceTestApp(t *testing.T) (*app, *sql.DB) {
 	if _, err := db.Exec(`CREATE TABLE sources (id INTEGER PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL UNIQUE, is_active BOOLEAN NOT NULL DEFAULT 1)`); err != nil {
 		t.Fatal(err)
 	}
-	return &app{store: database.NewStore(db), cache: &feedCache{}, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}, db
+	return &app{store: database.NewStore(db), logger: slog.New(slog.NewTextHandler(io.Discard, nil))}, db
 }
 
 func sourceRequest(a *app, method, path, body string) *httptest.ResponseRecorder {
@@ -201,7 +199,6 @@ func TestUpdateSourcesAndMissingID(t *testing.T) {
 				t.Fatal(err)
 			}
 			body := `{"1":{"name":" Renamed ","url":" https://renamed.example/rss ","is_active":false}`
-			a.cache.set([]byte(`[]`), time.Hour)
 			wantStatus := http.StatusOK
 			if missing {
 				body += `,"999":{"name":"Missing","url":"https://missing.example/rss","is_active":true}`
@@ -210,9 +207,6 @@ func TestUpdateSourcesAndMissingID(t *testing.T) {
 			w := sourceRequest(a, http.MethodPost, "/change-sources", body+"}")
 			if w.Code != wantStatus {
 				t.Fatalf("status=%d, want %d; body=%s", w.Code, wantStatus, w.Body.String())
-			}
-			if _, hit := a.cache.get(); hit != missing {
-				t.Fatalf("cache hit=%v, want %v", hit, missing)
 			}
 			var name, url string
 			var active bool

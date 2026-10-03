@@ -46,8 +46,6 @@ func (a *app) buildFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.cache.clear()
-
 	respondWithJSON(w, http.StatusOK, map[string]string{
 		"details": "Feed refreshed successfully",
 	})
@@ -66,12 +64,6 @@ type articleResponse struct {
 }
 
 func (a *app) fetchFeed(w http.ResponseWriter, r *http.Request) {
-	data, hit := a.cache.get()
-	if hit {
-		respondWithJSON(w, http.StatusOK, json.RawMessage(data))
-		return
-	}
-
 	articles, err := a.store.GetUnreadArticles(r.Context())
 	if err != nil {
 		a.logger.ErrorContext(r.Context(), "fetch unread articles failed", "err", err)
@@ -99,15 +91,6 @@ func (a *app) fetchFeed(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	b, err := json.Marshal(payload)
-	if err != nil {
-		a.logger.ErrorContext(r.Context(), "marshal articles failed", "err", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to marshal articles", err.Error())
-		return
-	}
-
-	a.cache.set(b, 12*time.Hour)
-
 	respondWithJSON(w, http.StatusOK, payload)
 }
 
@@ -126,8 +109,6 @@ func (a *app) markAsRead(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Failed to mark article as read", err.Error())
 		return
 	}
-
-	a.cache.clear()
 
 	respondWithJSON(w, http.StatusOK, map[string]string{
 		"details": "Article marked as read successfully",
@@ -221,9 +202,6 @@ func (a *app) updateInterests(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Failed to update interests", err.Error())
 		return
 	}
-
-	a.cache.clear()
-	defer a.cache.clear()
 
 	err = scripts.RunResnik(r.Context(), "internal/database/resnik.py")
 	if err != nil {
@@ -380,9 +358,6 @@ func (a *app) updateSources(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Failed to update sources", err.Error())
 		return
 	}
-
-	// Cached articles include source names, which may have changed.
-	a.cache.clear()
 
 	respondWithJSON(w, http.StatusOK, map[string]string{
 		"details": "Sources updated successfully",
