@@ -17,7 +17,10 @@ import (
 	"github.com/aeron-cap/news-aggregator/internal/scripts"
 )
 
+const cookieName = "news_agg_session"
+
 func health(w http.ResponseWriter, r *http.Request) {
+	
 	if isShuttingDown.Load() {
 		http.Error(w, "Server is shutting down", http.StatusServiceUnavailable)
 		return
@@ -25,6 +28,34 @@ func health(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
+}
+
+func (a *app) setCookie(w http.ResponseWriter, r *http.Request) {
+	token, tokenHash := newSessionToken()
+	expiresAt := time.Now().UTC().Add(15 * 24 * time.Hour)
+
+	err := a.store.CreateAnonymousSession(r.Context(), tokenHash, expiresAt)
+	if err != nil {
+		a.logger.ErrorContext(r.Context(), "saving cookie failed", "err", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to set cookie", err.Error())
+	}
+
+	cookie := http.Cookie{
+		Name: cookieName,
+		Value: token,
+		MaxAge: int(expiresAt.Sub(time.Now().UTC()).Seconds()),
+		HttpOnly: true,
+		Secure: true,
+		SameSite: http.SameSiteLaxMode,
+	}
+
+	http.SetCookie(w, &cookie)
+	a.logger.InfoContext(r.Context(), "cookie set successfully", "cookie_name", cookieName, "expires_at", expiresAt)
+	respondWithJSON(w, http.StatusOK, map[string]string{
+		"details": "Cookie set successfully",
+	})
+
+	return
 }
 
 func (a *app) buildFeed(w http.ResponseWriter, r *http.Request) {

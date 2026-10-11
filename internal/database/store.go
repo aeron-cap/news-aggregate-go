@@ -15,6 +15,11 @@ func NewStore(db *sql.DB) *Store {
 	return &Store{db: db}
 }
 
+func (s *Store) CreateAnonymousSession(ctx context.Context, tokenHash string, expiresAt time.Time) error {
+
+	return nil
+}
+
 type Source struct {
 	ID       int64  `json:"id"`
 	Name     string `json:"name"`

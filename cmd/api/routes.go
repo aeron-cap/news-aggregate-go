@@ -6,6 +6,8 @@ func routes(app *app) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", health)
 
+	mux.HandleFunc("POST /set-cookie", app.setCookie)
+
 	mux.HandleFunc("GET /build-feed", app.buildFeed)
 	mux.HandleFunc("GET /today", app.fetchFeed)
 	mux.HandleFunc("POST /articles/{id}/read", app.markAsRead)
