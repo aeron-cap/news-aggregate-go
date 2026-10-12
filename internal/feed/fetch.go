@@ -46,7 +46,7 @@ func CreateFeed(ctx context.Context, store *database.Store) (bool, error) {
 		return false, nil
 	}
 
-	sources, err := store.GetSources(ctx)
+	sources, err := store.GetActiveSources(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to get sources: %w", err)
 	}

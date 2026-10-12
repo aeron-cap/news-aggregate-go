@@ -89,7 +89,7 @@ func TestGetSourcesOnlyActive(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO sources (name, url, is_active) VALUES ('Science', 'https://science.example/rss', 1), ('Sports', 'https://sports.example/rss', 0)`); err != nil {
 		t.Fatal(err)
 	}
-	sources, err := store.GetSources(context.Background())
+	sources, err := store.GetActiveSources(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

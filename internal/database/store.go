@@ -16,7 +16,11 @@ func NewStore(db *sql.DB) *Store {
 }
 
 func (s *Store) CreateAnonymousSession(ctx context.Context, tokenHash string, expiresAt time.Time) error {
-
+	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions (token, expires_at) VALUES (?, ?)`, tokenHash, expiresAt)
+	if err != nil {
+		return err
+	}
+	
 	return nil
 }
 
@@ -27,7 +31,7 @@ type Source struct {
 	IsActive bool   `json:"is_active"`
 }
 
-func (s *Store) GetSources(ctx context.Context) ([]Source, error) {
+func (s *Store) GetActiveSources(ctx context.Context) ([]Source, error) {
 	return s.getSources(ctx, `SELECT id, name, url, is_active FROM sources WHERE is_active = 1 ORDER BY id`)
 }
 

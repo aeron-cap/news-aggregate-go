@@ -2,6 +2,14 @@ import type { Source, SourceFields } from './src/utils/sources'
 
 const API_URL = "http://localhost:6767";
 
+export async function setCookie() {
+  const response = await fetch(`${API_URL}/set-cookie`, {
+    method: "POST",
+  });
+  if (!response.ok) throw new Error("Could not set cookie")
+  return response.json();
+}
+
 export async function fetchToday() {
   const response = await fetch(`${API_URL}/today`);
   if (!response.ok) throw new Error("Could not load articles")
