@@ -69,7 +69,10 @@ class UserInterestsTests(ResnikTestCase):
             conn.execute("PRAGMA foreign_keys = ON")
             conn.executescript(pathlib.Path(__file__).with_name("schema.sql").read_text())
             with conn:
-                conn.executemany("INSERT INTO users (id) VALUES (?)", [(1,), (2,), (3,)])
+                conn.executemany(
+                    "INSERT INTO users (id, token, expires_at) VALUES (?, ?, datetime('now', '+1 day'))",
+                    [(user_id, str(user_id) * 64) for user_id in (1, 2, 3)],
+                )
                 conn.executemany(
                     "INSERT INTO interests (id, keyword, anchor) VALUES (?, ?, ?)",
                     [

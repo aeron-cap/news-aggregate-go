@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"time"
 )
@@ -32,5 +33,26 @@ func (a *app) cors(next http.Handler) http.Handler {
 		}
 
 		next.ServeHTTP(w, r)
+	})
+}
+
+type userIDKey struct{}
+
+func (a *app) requireSession(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie(CookieName)
+		if err != nil {
+			http.Error(w, "Session required", http.StatusUnauthorized)
+			return
+		}
+
+		userId, err := a.store.FetchUserID(r.Context(), hashSession(cookie.Value))
+		if err != nil {
+			http.Error(w, "Invalid session", http.StatusUnauthorized)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), userIDKey{}, userId)
+        next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

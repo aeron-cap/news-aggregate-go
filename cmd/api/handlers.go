@@ -17,7 +17,7 @@ import (
 	"github.com/aeron-cap/news-aggregator/internal/scripts"
 )
 
-const cookieName = "news_agg_session"
+const CookieName = "news_agg_session"
 
 func health(w http.ResponseWriter, r *http.Request) {
 	
@@ -30,7 +30,7 @@ func health(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("OK"))
 }
 
-func (a *app) setCookie(w http.ResponseWriter, r *http.Request) {
+func (a *app) setToken(w http.ResponseWriter, r *http.Request) {
 	token, tokenHash := newSessionToken()
 	expiresAt := time.Now().UTC().Add(15 * 24 * time.Hour)
 
@@ -41,7 +41,7 @@ func (a *app) setCookie(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cookie := http.Cookie{
-		Name: cookieName,
+		Name: CookieName,
 		Value: token,
 		MaxAge: int(expiresAt.Sub(time.Now().UTC()).Seconds()),
 		HttpOnly: true,
@@ -50,12 +50,48 @@ func (a *app) setCookie(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.SetCookie(w, &cookie)
-	a.logger.InfoContext(r.Context(), "cookie set successfully", "cookie_name", cookieName, "expires_at", expiresAt)
+	a.logger.InfoContext(r.Context(), "cookie set successfully", "cookie_name", CookieName, "expires_at", expiresAt)
 	respondWithJSON(w, http.StatusOK, map[string]string{
 		"details": "Cookie set successfully",
 	})
 
 	return
+}
+
+func (a *app) updateToken(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(CookieName)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Session required", "A valid session cookie is required")
+		return
+	}
+
+	token, tokenHash := newSessionToken()
+	expiresAt := time.Now().UTC().Add(15 * 24 * time.Hour)
+	err = a.store.UpdateToken(r.Context(), hashSession(cookie.Value), tokenHash, expiresAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		respondWithError(w, http.StatusUnauthorized, "Invalid or expired session", "Create a new session to continue")
+		return
+	}
+	if err != nil {
+		a.logger.ErrorContext(r.Context(), "update session token failed", "err", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to update session token", "Please try again later")
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     CookieName,
+		Value:    token,
+		Path:     "/",
+		Expires:  expiresAt,
+		MaxAge:   int((15 * 24 * time.Hour) / time.Second),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	w.Header().Set("Cache-Control", "no-store")
+	respondWithJSON(w, http.StatusOK, map[string]string{
+		"details": "Session token updated successfully",
+	})
 }
 
 func (a *app) buildFeed(w http.ResponseWriter, r *http.Request) {

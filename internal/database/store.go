@@ -16,11 +16,49 @@ func NewStore(db *sql.DB) *Store {
 }
 
 func (s *Store) CreateAnonymousSession(ctx context.Context, tokenHash string, expiresAt time.Time) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions (token, expires_at) VALUES (?, ?)`, tokenHash, expiresAt)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO users (token, expires_at) VALUES (?, ?)`, tokenHash, expiresAt)
 	if err != nil {
 		return err
 	}
 	
+	return nil
+}
+
+func (s *Store) FetchUserID(ctx context.Context, tokenHash string) (int64, error) {
+	var userID int64
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM users WHERE token = ? AND expires_at > CURRENT_TIMESTAMP`, tokenHash).Scan(&userID)	
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, fmt.Errorf("session not found: %w", err)
+		}
+		return 0, err
+	}
+	
+	return userID, nil
+}
+
+func (s *Store) UpdateToken(ctx context.Context, oldTokenHash, newTokenHash string, expiresAt time.Time) error {
+	now := time.Now().UTC()
+	if !expiresAt.After(now) {
+		return fmt.Errorf("session expiry must be in the future")
+	}
+
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE users SET token = ?, expires_at = ?
+		WHERE token = ? AND julianday(expires_at) > julianday(?)
+	`, newTokenHash, expiresAt.UTC(), oldTokenHash, now)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return fmt.Errorf("valid session not found: %w", sql.ErrNoRows)
+	}
+
 	return nil
 }
 

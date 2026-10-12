@@ -2,11 +2,11 @@ import type { Source, SourceFields } from './src/utils/sources'
 
 const API_URL = "http://localhost:6767";
 
-export async function setCookie() {
-  const response = await fetch(`${API_URL}/set-cookie`, {
+export async function setToken() {
+  const response = await fetch(`${API_URL}/set-token`, {
     method: "POST",
   });
-  if (!response.ok) throw new Error("Could not set cookie")
+  if (!response.ok) throw new Error("Could not set token")
   return response.json();
 }
 
