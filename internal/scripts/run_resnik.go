@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strconv"
 	"time"
 )
 
@@ -16,11 +17,11 @@ var PythonBin = func() string {
 	return "python"
 }()
 
-func RunResnik(ctx context.Context, scriptPath string) error {
+func RunResnik(ctx context.Context, scriptPath string, userID int64, dbPath string) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, PythonBin, scriptPath)
+	cmd := exec.CommandContext(ctx, PythonBin, scriptPath, "--user-id", strconv.FormatInt(userID, 10), "--db", dbPath)
 	out, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -28,7 +29,7 @@ func RunResnik(ctx context.Context, scriptPath string) error {
 			log.Printf("Script %s timed out in %s\n", scriptPath, out)
 		}
 		return fmt.Errorf("Failed to run script %s: %v\nOutput: %s", scriptPath, err, out)
-	} 
+	}
 
 	return nil
 }

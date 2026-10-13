@@ -28,17 +28,17 @@ type Article struct {
 }
 
 type rawSource struct {
-	ID	int64
+	ID  int64
 	URL string
 }
 
 type rawFeed struct {
 	SourceID int64
-	Feed     *gofeed.Feed	
+	Feed     *gofeed.Feed
 }
 
-func CreateFeed(ctx context.Context, store *database.Store) (bool, error) {
-	isRefreshNeeded, err := isRefreshNeeded(ctx, store)
+func CreateFeed(ctx context.Context, store *database.Store, userID int64) (bool, error) {
+	isRefreshNeeded, err := isRefreshNeeded(ctx, store, userID)
 	if err != nil {
 		return false, err
 	}
@@ -46,12 +46,15 @@ func CreateFeed(ctx context.Context, store *database.Store) (bool, error) {
 		return false, nil
 	}
 
-	sources, err := store.GetActiveSources(ctx)
+	sources, err := store.GetActiveSources(ctx, userID)
 	if err != nil {
 		return false, fmt.Errorf("failed to get sources: %w", err)
 	}
+	if len(sources) == 0 {
+		return false, nil
+	}
 
-	var workers = len(sources) + 1
+	workers := min(len(sources), 8)
 	sc := make(chan rawSource)
 	feeds := make(chan rawFeed)
 	workersDone := make(chan bool)
@@ -101,7 +104,7 @@ func CreateFeed(ctx context.Context, store *database.Store) (bool, error) {
 		return false, err
 	}
 
-	err = BuildFeed(ctx, store, articles)
+	err = BuildFeed(ctx, store, userID, articles)
 	if err != nil {
 		return false, err
 	}
@@ -194,13 +197,13 @@ func getDate(item *gofeed.Item) string {
 	return time.Now().UTC().Format(time.RFC3339)
 }
 
-func isRefreshNeeded(ctx context.Context, store *database.Store) (bool, error) {
-	unread, err := store.CountUnreadArticles(ctx)
+func isRefreshNeeded(ctx context.Context, store *database.Store, userID int64) (bool, error) {
+	unread, err := store.CountUnreadArticles(ctx, userID)
 	if err != nil {
 		return false, fmt.Errorf("failed to count unread articles: %w", err)
 	}
 
-	lastFetch, err := store.GetLastSourceDate(ctx)
+	lastFetch, err := store.GetLastFetchDate(ctx, userID)
 	if err != nil {
 		return false, fmt.Errorf("failed to get last fetch: %w", err)
 	}

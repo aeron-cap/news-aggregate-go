@@ -20,7 +20,7 @@ import (
 const CookieName = "news_agg_session"
 
 func health(w http.ResponseWriter, r *http.Request) {
-	
+
 	if isShuttingDown.Load() {
 		http.Error(w, "Server is shutting down", http.StatusServiceUnavailable)
 		return
@@ -31,6 +31,17 @@ func health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) setToken(w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie(CookieName); err == nil {
+		if _, err := a.store.FetchUserID(r.Context(), hashSession(cookie.Value)); err == nil {
+			w.Header().Set("Cache-Control", "no-store")
+			respondWithJSON(w, http.StatusOK, map[string]string{"details": "Session already exists"})
+			return
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			a.logger.ErrorContext(r.Context(), "session lookup failed", "err", err)
+			respondWithError(w, http.StatusInternalServerError, "Failed to load session", "Please try again later")
+			return
+		}
+	}
 	token, tokenHash := newSessionToken()
 	expiresAt := time.Now().UTC().Add(15 * 24 * time.Hour)
 
@@ -38,18 +49,22 @@ func (a *app) setToken(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		a.logger.ErrorContext(r.Context(), "saving cookie failed", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to set cookie", err.Error())
+		return
 	}
 
 	cookie := http.Cookie{
-		Name: CookieName,
-		Value: token,
-		MaxAge: int(expiresAt.Sub(time.Now().UTC()).Seconds()),
+		Name:     CookieName,
+		Value:    token,
+		Path:     "/",
+		Expires:  expiresAt,
+		MaxAge:   int(expiresAt.Sub(time.Now().UTC()).Seconds()),
 		HttpOnly: true,
-		Secure: true,
+		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	}
 
 	http.SetCookie(w, &cookie)
+	w.Header().Set("Cache-Control", "no-store")
 	a.logger.InfoContext(r.Context(), "cookie set successfully", "cookie_name", CookieName, "expires_at", expiresAt)
 	respondWithJSON(w, http.StatusOK, map[string]string{
 		"details": "Cookie set successfully",
@@ -95,10 +110,14 @@ func (a *app) updateToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) buildFeed(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requestUserID(w, r)
+	if !ok {
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	refreshed, err := feed.CreateFeed(ctx, a.store)
+	refreshed, err := feed.CreateFeed(ctx, a.store, userID)
 	if err != nil {
 		a.logger.ErrorContext(ctx, "build feed failed", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to build feed", err.Error())
@@ -131,7 +150,11 @@ type articleResponse struct {
 }
 
 func (a *app) fetchFeed(w http.ResponseWriter, r *http.Request) {
-	articles, err := a.store.GetUnreadArticles(r.Context())
+	userID, ok := requestUserID(w, r)
+	if !ok {
+		return
+	}
+	articles, err := feed.GetFeed(r.Context(), a.store, userID)
 	if err != nil {
 		a.logger.ErrorContext(r.Context(), "fetch unread articles failed", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch unread articles", err.Error())
@@ -162,15 +185,23 @@ func (a *app) fetchFeed(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) markAsRead(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	userID, ok := requestUserID(w, r)
+	if !ok {
+		return
+	}
+	id, parseErr := strconv.ParseInt(r.PathValue("id"), 10, 64)
 
-	if id == 0 {
+	if parseErr != nil || id <= 0 {
 		a.logger.WarnContext(r.Context(), "invalid article id", "id_raw", r.PathValue("id"))
 		respondWithError(w, http.StatusBadRequest, "Invalid article ID", "ID must be a positive integer")
 		return
 	}
 
-	err := a.store.MarkArticleAsRead(r.Context(), id)
+	err := a.store.MarkArticleAsRead(r.Context(), userID, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		respondWithError(w, http.StatusNotFound, "Article not found", "The article is not in your active subscriptions")
+		return
+	}
 	if err != nil {
 		a.logger.ErrorContext(r.Context(), "mark article as read failed", "id", id, "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to mark article as read", err.Error())
@@ -196,7 +227,11 @@ type interestPayload struct {
 }
 
 func (a *app) fetchInterests(w http.ResponseWriter, r *http.Request) {
-	interests, err := a.store.GetInterests(r.Context())
+	userID, ok := requestUserID(w, r)
+	if !ok {
+		return
+	}
+	interests, err := a.store.GetInterests(r.Context(), userID)
 	if err != nil {
 		a.logger.ErrorContext(r.Context(), "fetch interests failed", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch interests", err.Error())
@@ -218,6 +253,10 @@ func (a *app) fetchInterests(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) updateInterests(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requestUserID(w, r)
+	if !ok {
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
 
 	var payload map[int64]interestPayload
@@ -259,7 +298,7 @@ func (a *app) updateInterests(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	err = a.store.UpdateInterests(r.Context(), updates)
+	err = a.store.UpdateInterests(r.Context(), userID, updates)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			respondWithError(w, http.StatusNotFound, "Interest not found", err.Error())
@@ -270,7 +309,13 @@ func (a *app) updateInterests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = scripts.RunResnik(r.Context(), "internal/database/resnik.py")
+	dbPath, err := a.store.DatabasePath(r.Context())
+	if err != nil {
+		a.logger.ErrorContext(r.Context(), "resolve scoring database failed", "err", err)
+		respondWithError(w, http.StatusInternalServerError, "Interests updated, but weight recalculation failed", "Unable to open the scoring database")
+		return
+	}
+	err = scripts.RunResnik(r.Context(), "internal/database/resnik.py", userID, dbPath)
 	if err != nil {
 		a.logger.ErrorContext(r.Context(), "run resnik script failed", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Interests updated, but weight recalculation failed", err.Error())
@@ -309,7 +354,11 @@ func (source sourcesPayload) validatedSourceUpdate() (database.SourcesUpdate, er
 }
 
 func (a *app) fetchSources(w http.ResponseWriter, r *http.Request) {
-	sources, err := a.store.GetAllSources(r.Context())
+	userID, ok := requestUserID(w, r)
+	if !ok {
+		return
+	}
+	sources, err := a.store.GetAllSources(r.Context(), userID)
 	if err != nil {
 		a.logger.ErrorContext(r.Context(), "fetch sources failed", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch sources", err.Error())
@@ -330,6 +379,10 @@ func (a *app) fetchSources(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) insertSources(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requestUserID(w, r)
+	if !ok {
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
 
 	var payload []sourcesPayload
@@ -363,7 +416,7 @@ func (a *app) insertSources(w http.ResponseWriter, r *http.Request) {
 		updates = append(updates, update)
 	}
 
-	err = a.store.InsertSources(r.Context(), updates)
+	err = a.store.InsertSources(r.Context(), userID, updates)
 	if err != nil {
 		a.logger.ErrorContext(r.Context(), "insert sources failed", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to insert sources", err.Error())
@@ -376,6 +429,10 @@ func (a *app) insertSources(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) updateSources(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requestUserID(w, r)
+	if !ok {
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
 
 	var payload map[int64]sourcesPayload
@@ -415,8 +472,12 @@ func (a *app) updateSources(w http.ResponseWriter, r *http.Request) {
 		updates[id] = update
 	}
 
-	err = a.store.UpdateSources(r.Context(), updates)
+	err = a.store.UpdateSources(r.Context(), userID, updates)
 	if err != nil {
+		if errors.Is(err, database.ErrSharedSourceName) {
+			respondWithError(w, http.StatusConflict, "Cannot rename shared source", err.Error())
+			return
+		}
 		if errors.Is(err, sql.ErrNoRows) {
 			respondWithError(w, http.StatusNotFound, "Source not found", err.Error())
 			return

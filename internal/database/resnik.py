@@ -1,6 +1,6 @@
+import argparse
 import os
 import sqlite3
-from ast import keyword
 from contextlib import closing
 import nltk
 from nltk.corpus import wordnet as wn
@@ -90,14 +90,21 @@ def update_weights(user_id, weights):
             )
 
 
-def main():
-    user_id = 1
-    interests = fetch_interests(user_id)
-    if interests is None:
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Recalculate one reader's interest weights")
+    parser.add_argument("--user-id", type=int, required=True)
+    parser.add_argument("--db", required=True)
+    args = parser.parse_args(argv)
+    if args.user_id <= 0:
+        parser.error("--user-id must be positive")
+    global DB_NAME
+    DB_NAME = os.path.abspath(args.db)
+    interests = fetch_interests(args.user_id)
+    if not interests:
         return
 
     weights = calc_weights(interests)
-    update_weights(user_id, weights)
+    update_weights(args.user_id, weights)
 
 
 if __name__ == "__main__":

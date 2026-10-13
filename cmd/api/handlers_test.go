@@ -255,7 +255,11 @@ func TestUpdateSourcesAndMissingID(t *testing.T) {
 			}
 			var name, url string
 			var active bool
-			if err := db.QueryRow(`SELECT s.name, s.url, us.is_active FROM sources s JOIN user_sources us ON us.source_id = s.id WHERE us.user_id = 1 AND s.id = 1`).Scan(&name, &url, &active); err != nil {
+			wantURL := "https://renamed.example/rss"
+			if missing {
+				wantURL = "https://original.example/rss"
+			}
+			if err := db.QueryRow(`SELECT s.name, s.url, us.is_active FROM sources s JOIN user_sources us ON us.source_id = s.id WHERE us.user_id = 1 AND s.url = ?`, wantURL).Scan(&name, &url, &active); err != nil {
 				t.Fatal(err)
 			}
 			if missing {
@@ -268,6 +272,10 @@ func TestUpdateSourcesAndMissingID(t *testing.T) {
 			var otherActive bool
 			if err := db.QueryRow(`SELECT is_active FROM user_sources WHERE user_id = 2 AND source_id = 1`).Scan(&otherActive); err != nil || !otherActive {
 				t.Fatalf("request changed user 2 subscription: active=%v err=%v", otherActive, err)
+			}
+			var originalName, originalURL string
+			if err := db.QueryRow(`SELECT name, url FROM sources WHERE id = 1`).Scan(&originalName, &originalURL); err != nil || originalName != "Original" || originalURL != "https://original.example/rss" {
+				t.Fatalf("request rewrote shared source: name=%q url=%q err=%v", originalName, originalURL, err)
 			}
 		})
 	}
@@ -393,5 +401,100 @@ func TestUpdateTokenRouteRejectsGET(t *testing.T) {
 	routes(a).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/update-token", nil))
 	if w.Code != http.StatusMethodNotAllowed || len(w.Result().Cookies()) != 0 {
 		t.Fatalf("GET status = %d, want 405 without a cookie", w.Code)
+	}
+}
+
+func TestSetTokenReusesExistingProfile(t *testing.T) {
+	a, db := sessionTestApp(t)
+	created := httptest.NewRecorder()
+	routes(a).ServeHTTP(created, httptest.NewRequest(http.MethodPost, "/set-token", nil))
+	if created.Code != http.StatusOK || len(created.Result().Cookies()) != 1 {
+		t.Fatalf("create status=%d body=%s", created.Code, created.Body.String())
+	}
+	cookie := created.Result().Cookies()[0]
+	userID, err := a.store.FetchUserID(context.Background(), hashSession(cookie.Value))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repeated := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/set-token", nil)
+	r.AddCookie(cookie)
+	routes(a).ServeHTTP(repeated, r)
+	if repeated.Code != http.StatusOK || len(repeated.Result().Cookies()) != 0 {
+		t.Fatal("valid session was replaced")
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("user count=%d err=%v", count, err)
+	}
+	if id, err := a.store.FetchUserID(context.Background(), hashSession(cookie.Value)); err != nil || id != userID {
+		t.Fatalf("profile changed: id=%d err=%v", id, err)
+	}
+}
+
+func TestPersonalRoutesRequireSession(t *testing.T) {
+	a, _ := sessionTestApp(t)
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/today"}, {http.MethodGet, "/interests"}, {http.MethodGet, "/sources"},
+		{http.MethodPost, "/articles/1/read"}, {http.MethodPost, "/change-interests"}, {http.MethodPost, "/sources"},
+	} {
+		w := httptest.NewRecorder()
+		routes(a).ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("%s %s status=%d", tc.method, tc.path, w.Code)
+		}
+	}
+}
+
+func TestReadHandlerUsesCookieIdentity(t *testing.T) {
+	a, db := userTestApp(t)
+	ctx := context.Background()
+	for _, userID := range []int64{1, 2} {
+		if err := a.store.InsertSources(ctx, userID, []database.SourcesUpdate{{Name: "Shared", URL: "https://example.com/rss", IsActive: true}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := a.store.InsertArticles(ctx, []database.Article{{SourceID: sql.NullInt64{Int64: 1, Valid: true}, Title: "Article", URL: "https://example.com/article", BatchDate: time.Now().UTC()}}); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodPost, "/articles/1/read?user_id=2", nil)
+	r.AddCookie(&http.Cookie{Name: CookieName, Value: "handler-user-1"})
+	w := httptest.NewRecorder()
+	routes(a).ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("read status=%d body=%s", w.Code, w.Body.String())
+	}
+	for _, tc := range []struct {
+		userID int64
+		count  int
+	}{{1, 1}, {2, 0}} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM user_articles WHERE user_id=? AND read_at IS NOT NULL`, tc.userID).Scan(&count); err != nil || count != tc.count {
+			t.Fatalf("user %d reads=%d err=%v", tc.userID, count, err)
+		}
+	}
+	r = httptest.NewRequest(http.MethodGet, "/today", nil)
+	r.AddCookie(&http.Cookie{Name: CookieName, Value: "handler-user-2"})
+	w = httptest.NewRecorder()
+	routes(a).ServeHTTP(w, r)
+	var articles []articleResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &articles); err != nil || w.Code != http.StatusOK || len(articles) != 1 {
+		t.Fatalf("other reader feed status=%d articles=%+v err=%v", w.Code, articles, err)
+	}
+}
+
+func TestSessionMutationRejectsCrossOriginBrowserRequest(t *testing.T) {
+	a, db := sessionTestApp(t)
+	r := httptest.NewRequest(http.MethodPost, "/set-token", nil)
+	r.Header.Set("Origin", "https://untrusted.example")
+	r.Header.Set("Sec-Fetch-Site", "cross-site")
+	w := httptest.NewRecorder()
+	routes(a).ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden || len(w.Result().Cookies()) != 0 {
+		t.Fatalf("cross-origin status=%d", w.Code)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("cross-origin request created a profile: count=%d err=%v", count, err)
 	}
 }

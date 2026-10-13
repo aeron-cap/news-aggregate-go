@@ -3,37 +3,47 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
-type Store struct {
-	db *sql.DB
-}
+type Store struct{ db *sql.DB }
 
-func NewStore(db *sql.DB) *Store {
-	return &Store{db: db}
-}
+func NewStore(db *sql.DB) *Store { return &Store{db: db} }
+
+var ErrSharedSourceName = errors.New("shared source names cannot be changed; use a different feed URL")
 
 func (s *Store) CreateAnonymousSession(ctx context.Context, tokenHash string, expiresAt time.Time) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO users (token, expires_at) VALUES (?, ?)`, tokenHash, expiresAt)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	
-	return nil
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `INSERT INTO users (token, expires_at) VALUES (?, ?)`, tokenHash, expiresAt.UTC())
+	if err != nil {
+		return err
+	}
+	userID, err := result.LastInsertId()
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO user_sources (user_id, source_id) SELECT ?, id FROM sources WHERE is_seeded = 1`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO user_interests (user_id, interest_id) SELECT ?, id FROM interests`, userID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) FetchUserID(ctx context.Context, tokenHash string) (int64, error) {
 	var userID int64
-	err := s.db.QueryRowContext(ctx, `SELECT id FROM users WHERE token = ? AND expires_at > CURRENT_TIMESTAMP`, tokenHash).Scan(&userID)	
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM users WHERE token = ? AND julianday(expires_at) > julianday(?)`, tokenHash, time.Now().UTC()).Scan(&userID)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return 0, fmt.Errorf("session not found: %w", err)
-		}
-		return 0, err
+		return 0, fmt.Errorf("find session: %w", err)
 	}
-	
 	return userID, nil
 }
 
@@ -42,23 +52,21 @@ func (s *Store) UpdateToken(ctx context.Context, oldTokenHash, newTokenHash stri
 	if !expiresAt.After(now) {
 		return fmt.Errorf("session expiry must be in the future")
 	}
-
-	result, err := s.db.ExecContext(ctx, `
-		UPDATE users SET token = ?, expires_at = ?
-		WHERE token = ? AND julianday(expires_at) > julianday(?)
-	`, newTokenHash, expiresAt.UTC(), oldTokenHash, now)
+	result, err := s.db.ExecContext(ctx, `UPDATE users SET token = ?, expires_at = ? WHERE token = ? AND julianday(expires_at) > julianday(?)`, newTokenHash, expiresAt.UTC(), oldTokenHash, now)
 	if err != nil {
 		return err
 	}
+	return requireAffected(result, "valid session")
+}
 
-	affected, err := result.RowsAffected()
+func requireAffected(result sql.Result, entity string) error {
+	count, err := result.RowsAffected()
 	if err != nil {
 		return err
 	}
-	if affected == 0 {
-		return fmt.Errorf("valid session not found: %w", sql.ErrNoRows)
+	if count == 0 {
+		return fmt.Errorf("%s not found: %w", entity, sql.ErrNoRows)
 	}
-
 	return nil
 }
 
@@ -69,35 +77,33 @@ type Source struct {
 	IsActive bool   `json:"is_active"`
 }
 
-func (s *Store) GetActiveSources(ctx context.Context) ([]Source, error) {
-	return s.getSources(ctx, `SELECT id, name, url, is_active FROM sources WHERE is_active = 1 ORDER BY id`)
+const sourceVisibility = `(s.is_seeded = 1 OR us.user_id IS NOT NULL)`
+const activeSourceVisibility = sourceVisibility + ` AND COALESCE(us.is_active, s.is_seeded) = 1`
+
+func (s *Store) GetActiveSources(ctx context.Context, userID int64) ([]Source, error) {
+	return s.getSources(ctx, userID, activeSourceVisibility)
 }
 
-func (s *Store) GetAllSources(ctx context.Context) ([]Source, error) {
-	return s.getSources(ctx, `SELECT id, name, url, is_active FROM sources ORDER BY id`)
+func (s *Store) GetAllSources(ctx context.Context, userID int64) ([]Source, error) {
+	return s.getSources(ctx, userID, sourceVisibility)
 }
-
-func (s *Store) getSources(ctx context.Context, stmt string) ([]Source, error) {
-	rows, err := s.db.QueryContext(ctx, stmt)
+func (s *Store) getSources(ctx context.Context, userID int64, predicate string) ([]Source, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT s.id, s.name, s.url, COALESCE(us.is_active, s.is_seeded)
+        FROM sources s LEFT JOIN user_sources us ON us.source_id = s.id AND us.user_id = ?
+        WHERE `+predicate+` ORDER BY s.id`, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	sources := []Source{}
 	for rows.Next() {
-		var src Source
-		if err := rows.Scan(&src.ID, &src.Name, &src.URL, &src.IsActive); err != nil {
+		var source Source
+		if err := rows.Scan(&source.ID, &source.Name, &source.URL, &source.IsActive); err != nil {
 			return nil, err
 		}
-		sources = append(sources, src)
+		sources = append(sources, source)
 	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return sources, nil
+	return sources, rows.Err()
 }
 
 type SourcesUpdate struct {
@@ -106,55 +112,110 @@ type SourcesUpdate struct {
 	IsActive bool   `json:"is_active"`
 }
 
-func (s *Store) InsertSources(ctx context.Context, sources []SourcesUpdate) error {
+func sourceForURL(ctx context.Context, tx *sql.Tx, source SourcesUpdate) (int64, error) {
+
+	if _, err := tx.ExecContext(ctx, `INSERT INTO sources (name, url) VALUES (?, ?) ON CONFLICT(url) DO NOTHING`, source.Name, source.URL); err != nil {
+		return 0, err
+	}
+	var id int64
+	err := tx.QueryRowContext(ctx, `SELECT id FROM sources WHERE url = ?`, source.URL).Scan(&id)
+	return id, err
+}
+
+func setSubscription(ctx context.Context, tx *sql.Tx, userID, sourceID int64, active bool) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO user_sources (user_id, source_id, is_active) VALUES (?, ?, ?)
+        ON CONFLICT(user_id, source_id) DO UPDATE SET is_active = excluded.is_active`, userID, sourceID, active)
+	return err
+}
+
+func (s *Store) InsertSources(ctx context.Context, userID int64, sources []SourcesUpdate) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO sources (name, url, is_active) VALUES (?, ?, ?)`)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	for _, src := range sources {
-		if _, err := stmt.ExecContext(ctx, src.Name, src.URL, src.IsActive); err != nil {
+	seen := map[string]bool{}
+	for _, source := range sources {
+		source.Name, source.URL = strings.TrimSpace(source.Name), strings.TrimSpace(source.URL)
+		if seen[source.URL] {
+			return fmt.Errorf("duplicate feed URL in source batch")
+		}
+		seen[source.URL] = true
+		sourceID, err := sourceForURL(ctx, tx, source)
+		if err != nil {
+			return err
+		}
+		if err := setSubscription(ctx, tx, userID, sourceID, source.IsActive); err != nil {
 			return err
 		}
 	}
-
 	return tx.Commit()
 }
 
-func (s *Store) UpdateSources(ctx context.Context, updates map[int64]SourcesUpdate) error {
+func (s *Store) UpdateSources(ctx context.Context, userID int64, updates map[int64]SourcesUpdate) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-
-	stmt, err := tx.PrepareContext(ctx, `UPDATE sources SET name = ?, url = ?, is_active = ? WHERE id = ?`)
-	if err != nil {
-		return err
+	type change struct {
+		oldID, newID int64
+		seeded       bool
+		update       SourcesUpdate
 	}
-	defer stmt.Close()
-
+	changes := []change{}
+	seen := map[string]bool{}
 	for id, update := range updates {
-		result, err := stmt.ExecContext(ctx, update.Name, update.URL, update.IsActive, id)
-		if err != nil {
-			return err
+		update.Name, update.URL = strings.TrimSpace(update.Name), strings.TrimSpace(update.URL)
+		if seen[update.URL] {
+			return fmt.Errorf("duplicate feed URL in source batch")
 		}
-		affected, err := result.RowsAffected()
+		seen[update.URL] = true
+		var name, url string
+		var seeded bool
+		err := tx.QueryRowContext(ctx, `SELECT s.name, s.url, s.is_seeded FROM sources s
+            LEFT JOIN user_sources us ON us.source_id = s.id AND us.user_id = ?
+            WHERE s.id = ? AND `+sourceVisibility, userID, id).Scan(&name, &url, &seeded)
 		if err != nil {
-			return err
+			return fmt.Errorf("find source %d: %w", id, err)
 		}
-		if affected == 0 {
-			return fmt.Errorf("no source found with id %d: %w", id, sql.ErrNoRows)
+		targetID := id
+		if update.URL != url {
+			targetID, err = sourceForURL(ctx, tx, update)
+			if err != nil {
+				return err
+			}
+		} else if update.Name != name {
+			var others int
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM user_sources WHERE source_id = ? AND user_id != ?`, id, userID).Scan(&others); err != nil {
+				return err
+			}
+			if seeded || others > 0 {
+				return ErrSharedSourceName
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE sources SET name = ? WHERE id = ?`, update.Name, id); err != nil {
+				return err
+			}
+		}
+		changes = append(changes, change{id, targetID, seeded, update})
+	}
+	for _, change := range changes {
+		if change.oldID == change.newID {
+			continue
+		}
+		if change.seeded {
+			if err := setSubscription(ctx, tx, userID, change.oldID, false); err != nil {
+				return err
+			}
+		} else if _, err := tx.ExecContext(ctx, `DELETE FROM user_sources WHERE user_id = ? AND source_id = ?`, userID, change.oldID); err != nil {
+			return err
 		}
 	}
-
+	for _, change := range changes {
+		if err := setSubscription(ctx, tx, userID, change.newID, change.update.IsActive); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
 }
 
@@ -167,15 +228,13 @@ type Interest struct {
 	IsActive bool           `json:"is_active"`
 }
 
-func (s *Store) GetInterests(ctx context.Context) ([]Interest, error) {
-	const stmt = `SELECT id, keyword, weight, is_main, anchor, is_active FROM interests`
-
-	rows, err := s.db.QueryContext(ctx, stmt)
+func (s *Store) GetInterests(ctx context.Context, userID int64) ([]Interest, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT i.id, i.keyword, COALESCE(ui.weight, 1), COALESCE(ui.is_main, 0), i.anchor, COALESCE(ui.is_active, 0)
+        FROM interests i LEFT JOIN user_interests ui ON ui.interest_id = i.id AND ui.user_id = ? ORDER BY i.id`, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	interests := []Interest{}
 	for rows.Next() {
 		var interest Interest
@@ -184,12 +243,7 @@ func (s *Store) GetInterests(ctx context.Context) ([]Interest, error) {
 		}
 		interests = append(interests, interest)
 	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return interests, nil
+	return interests, rows.Err()
 }
 
 type InterestUpdate struct {
@@ -197,33 +251,24 @@ type InterestUpdate struct {
 	IsMain   bool
 }
 
-func (s *Store) UpdateInterests(ctx context.Context, updates map[int64]InterestUpdate) error {
+func (s *Store) UpdateInterests(ctx context.Context, userID int64, updates map[int64]InterestUpdate) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-
-	stmt, err := tx.PrepareContext(ctx, `UPDATE interests SET is_active = ?, is_main = ? WHERE id = ?`)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
 	for id, update := range updates {
-		result, err := stmt.ExecContext(ctx, update.IsActive, update.IsMain, id)
+		result, err := tx.ExecContext(ctx, `INSERT INTO user_interests (user_id, interest_id, is_active, is_main, weight)
+            SELECT ?, id, ?, ?, CASE WHEN ? THEN 1 ELSE 0 END FROM interests WHERE id = ?
+            ON CONFLICT(user_id, interest_id) DO UPDATE SET is_active = excluded.is_active, is_main = excluded.is_main,
+                weight = CASE WHEN excluded.is_active = 0 THEN 0 ELSE user_interests.weight END`, userID, update.IsActive, update.IsMain, update.IsActive, id)
 		if err != nil {
 			return err
 		}
-		affected, err := result.RowsAffected()
-		if err != nil {
+		if err := requireAffected(result, "interest"); err != nil {
 			return err
-		}
-		if affected == 0 {
-			return fmt.Errorf("no interest found with id %d: %w", id, sql.ErrNoRows)
 		}
 	}
-
 	return tx.Commit()
 }
 
@@ -235,6 +280,7 @@ type Article struct {
 	Author        sql.NullString `json:"author"`
 	URL           string         `json:"url"`
 	SourceDate    sql.NullTime   `json:"source_date"`
+	Tags          sql.NullString `json:"tags"`
 	WeightedScore float64        `json:"weighted_score"`
 	BatchDate     time.Time      `json:"batch_date"`
 	CreatedAt     time.Time      `json:"created_at"`
@@ -248,174 +294,139 @@ func (s *Store) InsertArticles(ctx context.Context, articles []Article) error {
 		return err
 	}
 	defer tx.Rollback()
-
-	stmt, err := tx.PrepareContext(ctx, `
-        INSERT INTO articles
-        (source_id, title, summary, author, url, source_date, weighted_score, batch_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (url) DO UPDATE SET
-        	weighted_score = excluded.weighted_score
-        WHERE excluded.weighted_score > articles.weighted_score
-    `)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
 	for _, article := range articles {
-		_, err := stmt.ExecContext(
-			ctx,
-			article.SourceID,
-			article.Title,
-			article.Summary,
-			article.Author,
-			article.URL,
-			article.SourceDate,
-			article.WeightedScore,
-			article.BatchDate,
-		)
+		_, err := tx.ExecContext(ctx, `INSERT INTO articles (source_id, title, summary, author, url, source_date, tags, batch_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(source_id, url) DO UPDATE SET
+                title = excluded.title, summary = excluded.summary, author = excluded.author,
+                source_date = excluded.source_date, tags = excluded.tags, batch_date = excluded.batch_date`,
+			article.SourceID, article.Title, article.Summary, article.Author, article.URL, article.SourceDate, article.Tags, article.BatchDate.UTC())
 		if err != nil {
-			fmt.Printf("Warning: failed to insert article %s: %v\n", article.URL, err)
-			continue
+			return fmt.Errorf("insert article: %w", err)
 		}
 	}
-
 	return tx.Commit()
 }
 
 func (s *Store) DeleteArticlesByBatchDate(ctx context.Context, batchDate time.Time) error {
-	stmt, err := s.db.PrepareContext(ctx, `DELETE FROM articles WHERE batch_date = ?`)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	_, err = stmt.ExecContext(ctx, batchDate.Format("2006-01-02"))
+	_, err := s.db.ExecContext(ctx, `DELETE FROM articles WHERE date(batch_date) = ?`, batchDate.UTC().Format("2006-01-02"))
 	return err
 }
 
-func (s *Store) MarkArticleAsRead(ctx context.Context, articleID int64) error {
-	stmt, err := s.db.PrepareContext(ctx, `UPDATE articles SET read_at = CURRENT_TIMESTAMP WHERE id = ?`)
+func (s *Store) MarkArticleAsRead(ctx context.Context, userID, articleID int64) error {
+	result, err := s.db.ExecContext(ctx, `INSERT INTO user_articles (user_id, article_id, read_at)
+        SELECT ?, a.id, CURRENT_TIMESTAMP FROM articles a JOIN sources s ON s.id = a.source_id
+        LEFT JOIN user_sources us ON us.source_id = s.id AND us.user_id = ?
+        WHERE a.id = ? AND `+activeSourceVisibility+`
+        ON CONFLICT(user_id, article_id) DO UPDATE SET read_at = COALESCE(user_articles.read_at, excluded.read_at)`, userID, userID, articleID)
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
-
-	res, err := stmt.ExecContext(ctx, articleID)
-	if err != nil {
-		return err
-	}
-
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-
-	if affected == 0 {
-		return fmt.Errorf("no article found with id %d", articleID)
-	}
-
-	return nil
+	return requireAffected(result, "article")
 }
 
-func (s *Store) GetUnreadArticles(ctx context.Context) ([]Article, error) {
-	stmt := `
-        SELECT a.*, s.name
-        FROM articles a
-        LEFT JOIN sources s ON a.source_id = s.id
-        WHERE a.read_at IS NULL
-        ORDER BY a.batch_date DESC, a.weighted_score DESC
-    `
+const unreadArticleVisibility = activeSourceVisibility + ` AND NOT EXISTS (
+    SELECT 1 FROM user_articles reads JOIN articles read_article ON read_article.id = reads.article_id
+    WHERE reads.user_id = ? AND reads.read_at IS NOT NULL AND read_article.url = a.url)`
 
-	rows, err := s.db.QueryContext(ctx, stmt)
+func (s *Store) GetUnreadArticles(ctx context.Context, userID int64) ([]Article, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT a.id, a.source_id, a.title, a.summary, a.author, a.url, a.source_date, a.tags,
+        COALESCE(ua.weighted_score, 0), a.batch_date, a.created_at, ua.read_at, s.name
+        FROM articles a JOIN sources s ON s.id = a.source_id
+        LEFT JOIN user_sources us ON us.source_id = s.id AND us.user_id = ?
+        LEFT JOIN user_articles ua ON ua.article_id = a.id AND ua.user_id = ?
+        WHERE `+unreadArticleVisibility+` ORDER BY a.batch_date DESC, COALESCE(ua.weighted_score, 0) DESC, a.id`, userID, userID, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	articles := []Article{}
 	for rows.Next() {
 		var article Article
-		if err := rows.Scan(
-			&article.ID,
-			&article.SourceID,
-			&article.Title,
-			&article.Summary,
-			&article.Author,
-			&article.URL,
-			&article.SourceDate,
-			&article.WeightedScore,
-			&article.BatchDate,
-			&article.CreatedAt,
-			&article.ReadAt,
-			&article.SourceName,
-		); err != nil {
+		if err := rows.Scan(&article.ID, &article.SourceID, &article.Title, &article.Summary, &article.Author, &article.URL,
+			&article.SourceDate, &article.Tags, &article.WeightedScore, &article.BatchDate, &article.CreatedAt, &article.ReadAt, &article.SourceName); err != nil {
 			return nil, err
 		}
 		articles = append(articles, article)
 	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return articles, nil
+	return articles, rows.Err()
 }
 
-func (s *Store) CountUnreadArticles(ctx context.Context) (int, error) {
-	stmt := `SELECT COUNT(*) FROM articles WHERE read_at IS NULL`
+func (s *Store) SaveArticleScores(ctx context.Context, userID int64, articles []Article) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, article := range articles {
+		result, err := tx.ExecContext(ctx, `INSERT INTO user_articles (user_id, article_id, weighted_score)
+            SELECT ?, a.id, ? FROM articles a JOIN sources s ON s.id = a.source_id
+            LEFT JOIN user_sources us ON us.source_id = s.id AND us.user_id = ?
+            WHERE a.id = ? AND `+activeSourceVisibility+`
+            ON CONFLICT(user_id, article_id) DO UPDATE SET weighted_score = excluded.weighted_score`, userID, article.WeightedScore, userID, article.ID)
+		if err != nil {
+			return err
+		}
+		if err := requireAffected(result, "article"); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
 
-	row := s.db.QueryRowContext(ctx, stmt)
+func (s *Store) CountUnreadArticles(ctx context.Context, userID int64) (int, error) {
 	var count int
-	if err := row.Scan(&count); err != nil {
-		return 0, err
-	}
-
-	return count, nil
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT a.url) FROM articles a JOIN sources s ON s.id = a.source_id
+        LEFT JOIN user_sources us ON us.source_id = s.id AND us.user_id = ? WHERE `+unreadArticleVisibility, userID, userID).Scan(&count)
+	return count, err
 }
 
-func (s *Store) GetLastFetchDate(ctx context.Context) (time.Time, error) {
-	const stmt = `SELECT MAX(batch_date) FROM articles WHERE read_at IS NOT NULL`
-
-	row := s.db.QueryRowContext(ctx, stmt)
-
-	var rawDateTime sql.NullString
-	if err := row.Scan(&rawDateTime); err != nil {
+func scanTimestamp(row *sql.Row) (time.Time, error) {
+	var value sql.NullString
+	if err := row.Scan(&value); err != nil {
 		return time.Time{}, err
 	}
-
-	if !rawDateTime.Valid {
+	if !value.Valid {
 		return time.Time{}, nil
 	}
-
-	const sqliteTimestampLayout = "2006-01-02 15:04:05.999999-07:00"
-	parsed, err := time.Parse(sqliteTimestampLayout, rawDateTime.String)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to parse last fetch date %q: %w", rawDateTime.String, err)
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02 15:04:05.999999999-07:00", "2006-01-02 15:04:05.999999999", "2006-01-02"} {
+		if parsed, err := time.Parse(layout, value.String); err == nil {
+			return parsed.UTC(), nil
+		}
 	}
-
-	return parsed, nil
+	return time.Time{}, fmt.Errorf("invalid database timestamp %q", value.String)
 }
 
-func (s *Store) GetLastSourceDate(ctx context.Context) (time.Time, error) {
-	const stmt = `SELECT MAX(source_date) FROM articles WHERE read_at IS NULL`
+func (s *Store) GetLastFetchDate(ctx context.Context, userID int64) (time.Time, error) {
+	return scanTimestamp(s.db.QueryRowContext(ctx, `SELECT MIN(latest_fetch) FROM (
+        SELECT COALESCE(MAX(a.batch_date), '1970-01-01 00:00:00') AS latest_fetch FROM sources s
+        LEFT JOIN user_sources us ON us.source_id = s.id AND us.user_id = ?
+        LEFT JOIN articles a ON a.source_id = s.id
+        WHERE `+activeSourceVisibility+` GROUP BY s.id)`, userID))
+}
 
-	row := s.db.QueryRowContext(ctx, stmt)
+func (s *Store) GetLastSourceDate(ctx context.Context, userID int64) (time.Time, error) {
+	return scanTimestamp(s.db.QueryRowContext(ctx, `SELECT MAX(a.source_date) FROM articles a JOIN sources s ON s.id = a.source_id
+        LEFT JOIN user_sources us ON us.source_id = s.id AND us.user_id = ? WHERE `+unreadArticleVisibility, userID, userID))
+}
 
-	var rawDateTime sql.NullString
-	if err := row.Scan(&rawDateTime); err != nil {
-		return time.Time{}, err
-	}
-
-	if !rawDateTime.Valid {
-		return time.Time{}, nil
-	}
-
-	const sqliteTimestampLayout = "2006-01-02 15:04:05Z07:00"
-	parsed, err := time.Parse(sqliteTimestampLayout, rawDateTime.String)
+func (s *Store) DatabasePath(ctx context.Context) (string, error) {
+	rows, err := s.db.QueryContext(ctx, `PRAGMA database_list`)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to parse last fetch date %q: %w", rawDateTime.String, err)
+		return "", err
 	}
-
-	return parsed, nil
+	defer rows.Close()
+	for rows.Next() {
+		var sequence int
+		var name, path string
+		if err := rows.Scan(&sequence, &name, &path); err != nil {
+			return "", err
+		}
+		if name == "main" && path != "" {
+			return path, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	return "", fmt.Errorf("Python scoring requires a file-backed database")
 }

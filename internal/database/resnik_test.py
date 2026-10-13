@@ -10,7 +10,6 @@ from unittest.mock import Mock, patch
 
 class ResnikTestCase(unittest.TestCase):
     def setUp(self):
-        # Keep these unit tests independent of NLTK downloads and the real database.
         self.wordnet = Mock()
         nltk = Mock()
         corpus = Mock(wordnet=self.wordnet, wordnet_ic=Mock())
@@ -131,6 +130,18 @@ class UserInterestsTests(ResnikTestCase):
 
     def test_fetch_unknown_user_returns_empty_list(self):
         self.assertEqual(self.resnik.fetch_interests(999), [])
+
+    def test_main_uses_requested_user_and_database(self):
+        db_path = self.resnik.DB_NAME
+        before = self.read_preferences()
+        self.resnik.DB_NAME = "unused-default.db"
+        with patch.object(self.resnik, "calc_weights", return_value={"science": 0.25}) as calculate:
+            self.resnik.main(["--user-id", "2", "--db", db_path])
+        self.assertTrue(pathlib.Path(self.resnik.DB_NAME).samefile(db_path))
+        self.assertTrue(all(row["user_id"] == 2 for row in calculate.call_args.args[0]))
+        after = self.read_preferences()
+        self.assertEqual([row for row in after if row[0] == 1], [row for row in before if row[0] == 1])
+        self.assertEqual(next(row[2] for row in after if row[0] == 2 and row[1] == 1), 0.25)
 
     def test_update_commits_weights_only_for_requested_user(self):
         self.resnik.update_weights(1, {"science": 1.0, "physics": 0.5})

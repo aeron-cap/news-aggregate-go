@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -32,29 +34,6 @@ func seedTestUsers(t *testing.T, store *Store) {
 			t.Fatal(err)
 		}
 	}
-}
-
-// These interfaces describe the user-scoped API needed by the new schema.
-// Runtime assertions let the tests compile while the store migration is pending.
-type userInterestStore interface {
-	GetInterests(context.Context, int64) ([]Interest, error)
-	UpdateInterests(context.Context, int64, map[int64]InterestUpdate) error
-}
-
-type userSourceStore interface {
-	GetActiveSources(context.Context, int64) ([]Source, error)
-	GetAllSources(context.Context, int64) ([]Source, error)
-	InsertSources(context.Context, int64, []SourcesUpdate) error
-	UpdateSources(context.Context, int64, map[int64]SourcesUpdate) error
-}
-
-func interestStoreForUserTests(t *testing.T, store *Store) userInterestStore {
-	t.Helper()
-	scoped, ok := any(store).(userInterestStore)
-	if !ok {
-		t.Fatal("Store.GetInterests and Store.UpdateInterests must accept userID after ctx")
-	}
-	return scoped
 }
 
 func TestSchemaSeedData(t *testing.T) {
@@ -158,7 +137,7 @@ func TestUpdateInterests(t *testing.T) {
 			`); err != nil {
 				t.Fatal(err)
 			}
-			store := interestStoreForUserTests(t, base)
+			store := base
 			err := store.UpdateInterests(context.Background(), 1, tc.updates)
 			if tc.missing {
 				if !errors.Is(err, sql.ErrNoRows) {
@@ -197,15 +176,11 @@ func TestUpdateInterests(t *testing.T) {
 	}
 }
 
-func sourceTestStore(t *testing.T) (userSourceStore, *sql.DB) {
+func sourceTestStore(t *testing.T) (*Store, *sql.DB) {
 	t.Helper()
 	store, db := schemaTestStore(t)
 	seedTestUsers(t, store)
-	scoped, ok := any(store).(userSourceStore)
-	if !ok {
-		t.Fatal("Store source methods must accept userID after ctx")
-	}
-	return scoped, db
+	return store, db
 }
 
 func TestGetSourcesOnlyActive(t *testing.T) {
@@ -363,7 +338,14 @@ func TestUpdateSourcesAtomic(t *testing.T) {
 			}
 			for id := int64(1); id <= 2; id++ {
 				var got SourcesUpdate
-				if err := db.QueryRow(`SELECT s.name, s.url, us.is_active FROM sources s JOIN user_sources us ON us.source_id = s.id WHERE us.user_id = 1 AND s.id = ?`, id).Scan(&got.Name, &got.URL, &got.IsActive); err != nil {
+				url := updates[id].URL
+				if mode != "success" {
+					url = "https://science.example/rss"
+					if id == 2 {
+						url = "https://sports.example/rss"
+					}
+				}
+				if err := db.QueryRow(`SELECT s.name, s.url, us.is_active FROM sources s JOIN user_sources us ON us.source_id = s.id WHERE us.user_id = 1 AND s.url = ?`, url).Scan(&got.Name, &got.URL, &got.IsActive); err != nil {
 					t.Fatal(err)
 				}
 				want := updates[id]
@@ -453,5 +435,170 @@ func TestUpdateToken(t *testing.T) {
 				t.Fatalf("user count = (%d, %v), want (2, nil)", count, err)
 			}
 		})
+	}
+}
+
+func TestOpenAndAnonymousSessionDefaults(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "news.db")
+	db, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	store := NewStore(db)
+	if err := store.CreateAnonymousSession(ctx, "profile-hash", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	userID, err := store.FetchUserID(ctx, "profile-hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources, err := store.GetActiveSources(ctx, userID)
+	if err != nil || len(sources) == 0 {
+		t.Fatalf("default sources=%+v err=%v", sources, err)
+	}
+	interests, err := store.GetInterests(ctx, userID)
+	if err != nil || len(interests) == 0 {
+		t.Fatalf("default interests=%+v err=%v", interests, err)
+	}
+	for _, interest := range interests {
+		if interest.IsActive || interest.IsMain {
+			t.Fatal("new profile has unexpected interest selections")
+		}
+	}
+	actualPath, err := store.DatabasePath(ctx)
+	if err != nil || filepath.Clean(actualPath) != filepath.Clean(path) {
+		t.Fatalf("database path=%q err=%v", actualPath, err)
+	}
+}
+
+func TestOpenRejectsLegacySchemaWithoutDeletingData(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE users (id INTEGER PRIMARY KEY); INSERT INTO users VALUES (42)`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	if opened, err := Open(context.Background(), path); err == nil {
+		opened.Close()
+		t.Fatal("legacy schema opened without migration")
+	} else if !strings.Contains(err.Error(), "fresh DB_PATH") {
+		t.Fatalf("unexpected schema error: %v", err)
+	}
+	db, err = sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var id int64
+	if err := db.QueryRow(`SELECT id FROM users`).Scan(&id); err != nil || id != 42 {
+		t.Fatalf("legacy row changed: id=%d err=%v", id, err)
+	}
+}
+
+func TestArticleStorePreservesPersonalState(t *testing.T) {
+	store, db := schemaTestStore(t)
+	seedTestUsers(t, store)
+	ctx := context.Background()
+	if err := store.InsertSources(ctx, 1, []SourcesUpdate{{Name: "Shared", URL: "https://shared.example/rss", IsActive: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InsertSources(ctx, 2, []SourcesUpdate{
+		{Name: "Shared", URL: "https://shared.example/rss", IsActive: true},
+		{Name: "Private", URL: "https://private.example/rss", IsActive: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	var privateSourceID int64
+	if err := db.QueryRow(`SELECT id FROM sources WHERE url = 'https://private.example/rss'`).Scan(&privateSourceID); err != nil {
+		t.Fatal(err)
+	}
+	article := Article{SourceID: sql.NullInt64{Int64: 1, Valid: true}, Title: "Shared article", URL: "https://example.com/shared", SourceDate: sql.NullTime{Time: now, Valid: true}, BatchDate: now}
+	private := Article{SourceID: sql.NullInt64{Int64: privateSourceID, Valid: true}, Title: "Private article", URL: "https://example.com/private", BatchDate: now.Add(-time.Hour)}
+	if err := store.InsertArticles(ctx, []Article{article, private}); err != nil {
+		t.Fatal(err)
+	}
+	article.ID, article.WeightedScore = 1, 2
+	if err := store.SaveArticleScores(ctx, 1, []Article{article}); err != nil {
+		t.Fatal(err)
+	}
+	article.WeightedScore = 0.5
+	if err := store.SaveArticleScores(ctx, 2, []Article{article}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkArticleAsRead(ctx, 1, 2); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("private article access error=%v", err)
+	}
+	if err := store.MarkArticleAsRead(ctx, 1, 1); err != nil {
+		t.Fatal(err)
+	}
+	var firstRead time.Time
+	if err := db.QueryRow(`SELECT read_at FROM user_articles WHERE user_id=1 AND article_id=1`).Scan(&firstRead); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkArticleAsRead(ctx, 1, 1); err != nil {
+		t.Fatal(err)
+	}
+	article.Title = "Updated title"
+	if err := store.InsertArticles(ctx, []Article{article}); err != nil {
+		t.Fatal(err)
+	}
+	article.WeightedScore = 3
+	if err := store.SaveArticleScores(ctx, 1, []Article{article}); err != nil {
+		t.Fatal(err)
+	}
+	var score float64
+	var read time.Time
+	if err := db.QueryRow(`SELECT weighted_score, read_at FROM user_articles WHERE user_id=1 AND article_id=1`).Scan(&score, &read); err != nil || score != 3 || !read.Equal(firstRead) {
+		t.Fatalf("read state changed: score=%v read=%v err=%v", score, read, err)
+	}
+	if err := db.QueryRow(`SELECT weighted_score FROM user_articles WHERE user_id=2 AND article_id=1`).Scan(&score); err != nil || score != 0.5 {
+		t.Fatalf("other user's score changed: score=%v err=%v", score, err)
+	}
+	for _, tc := range []struct {
+		userID int64
+		count  int
+	}{{1, 0}, {2, 2}} {
+		count, err := store.CountUnreadArticles(ctx, tc.userID)
+		if err != nil || count != tc.count {
+			t.Fatalf("user %d unread count=%d err=%v", tc.userID, count, err)
+		}
+		articles, err := store.GetUnreadArticles(ctx, tc.userID)
+		if err != nil || len(articles) != tc.count {
+			t.Fatalf("user %d unread articles=%+v err=%v", tc.userID, articles, err)
+		}
+	}
+	lastFetch, err := store.GetLastFetchDate(ctx, 2)
+	if err != nil || !lastFetch.Equal(private.BatchDate) {
+		t.Fatalf("last fetch=%v, want %v; err=%v", lastFetch, private.BatchDate, err)
+	}
+	lastSource, err := store.GetLastSourceDate(ctx, 2)
+	if err != nil || !lastSource.Equal(now) {
+		t.Fatalf("last source=%v, want %v; err=%v", lastSource, now, err)
+	}
+}
+
+func TestSharedSourceNameCannotChange(t *testing.T) {
+	store, db := schemaTestStore(t)
+	seedTestUsers(t, store)
+	ctx := context.Background()
+	source := SourcesUpdate{Name: "Original", URL: "https://example.com/rss", IsActive: true}
+	for _, userID := range []int64{1, 2} {
+		if err := store.InsertSources(ctx, userID, []SourcesUpdate{source}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	source.Name = "Personal rename"
+	if err := store.UpdateSources(ctx, 1, map[int64]SourcesUpdate{1: source}); !errors.Is(err, ErrSharedSourceName) {
+		t.Fatalf("shared rename error=%v", err)
+	}
+	var name string
+	if err := db.QueryRow(`SELECT name FROM sources WHERE id=1`).Scan(&name); err != nil || name != "Original" {
+		t.Fatalf("shared name=%q err=%v", name, err)
 	}
 }

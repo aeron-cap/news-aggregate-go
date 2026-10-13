@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"net/http"
 	"time"
 )
@@ -46,13 +48,27 @@ func (a *app) requireSession(next http.Handler) http.Handler {
 			return
 		}
 
-		userId, err := a.store.FetchUserID(r.Context(), hashSession(cookie.Value))
-		if err != nil {
+		userID, err := a.store.FetchUserID(r.Context(), hashSession(cookie.Value))
+		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "Invalid session", http.StatusUnauthorized)
 			return
 		}
+		if err != nil {
+			a.logger.ErrorContext(r.Context(), "session lookup failed", "err", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
 
-		ctx := context.WithValue(r.Context(), userIDKey{}, userId)
-        next.ServeHTTP(w, r.WithContext(ctx))
+		ctx := context.WithValue(r.Context(), userIDKey{}, userID)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func requestUserID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	userID, ok := r.Context().Value(userIDKey{}).(int64)
+	if !ok || userID <= 0 {
+		http.Error(w, "Session required", http.StatusUnauthorized)
+		return 0, false
+	}
+	return userID, true
 }

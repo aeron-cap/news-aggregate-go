@@ -16,7 +16,7 @@ import (
 )
 
 type app struct {
-	store *database.Store
+	store  *database.Store
 	logger *slog.Logger
 }
 
@@ -33,12 +33,15 @@ func main() {
 	defer stop()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	
-	dbPath := filepath.Join("internal/database", "news.db")
+
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = filepath.Join("internal/database", "news.db")
+	}
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		logger.Error("Failed to create database directory", "err", err)
 	}
-	
+
 	db, err := database.Open(sigCtx, dbPath)
 	if err != nil {
 		logger.Error("Failed to open database", "err", err)
@@ -47,20 +50,20 @@ func main() {
 	defer db.Close()
 
 	app := &app{
-		store: database.NewStore(db),
+		store:  database.NewStore(db),
 		logger: logger,
 	}
-	
+
 	mux := routes(app)
-	
+
 	ongoingCtx, stopOngoingGracefully := context.WithCancel(sigCtx)
-	
+
 	srv := &http.Server{
-		Addr: ":6767",
-		Handler: mux,
-		ReadTimeout: 5 * time.Second,
+		Addr:         ":6767",
+		Handler:      mux,
+		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
-		IdleTimeout: 60 * time.Second,
+		IdleTimeout:  60 * time.Second,
 		BaseContext: func(_ net.Listener) context.Context {
 			return ongoingCtx
 		},

@@ -9,16 +9,16 @@ func routes(app *app) http.Handler {
 	mux.HandleFunc("POST /set-token", app.setToken)
 	mux.HandleFunc("POST /update-token", app.updateToken)
 
-	mux.HandleFunc("GET /build-feed", app.buildFeed)
-	mux.HandleFunc("GET /today", app.fetchFeed)
-	mux.HandleFunc("POST /articles/{id}/read", app.markAsRead)
+	mux.Handle("GET /build-feed", app.requireSession(http.HandlerFunc(app.buildFeed)))
+	mux.Handle("GET /today", app.requireSession(http.HandlerFunc(app.fetchFeed)))
+	mux.Handle("POST /articles/{id}/read", app.requireSession(http.HandlerFunc(app.markAsRead)))
 
-	mux.HandleFunc("GET /interests", app.fetchInterests)
-	mux.HandleFunc("POST /change-interests", app.updateInterests)
+	mux.Handle("GET /interests", app.requireSession(http.HandlerFunc(app.fetchInterests)))
+	mux.Handle("POST /change-interests", app.requireSession(http.HandlerFunc(app.updateInterests)))
 
-	mux.HandleFunc("GET /sources", app.fetchSources)
-	mux.HandleFunc("POST /sources", app.insertSources)
-	mux.HandleFunc("POST /change-sources", app.updateSources)
+	mux.Handle("GET /sources", app.requireSession(http.HandlerFunc(app.fetchSources)))
+	mux.Handle("POST /sources", app.requireSession(http.HandlerFunc(app.insertSources)))
+	mux.Handle("POST /change-sources", app.requireSession(http.HandlerFunc(app.updateSources)))
 
-	return app.cors(app.logging(mux))
+	return app.cors(app.logging(http.NewCrossOriginProtection().Handler(mux)))
 }

@@ -82,7 +82,7 @@ function Sources() {
     clearFeedback()
     try {
       await updateSources(updates)
-      setSources(draft.map((source) => ({ id: source.id, ...normalizeSource(source) })))
+      setSources(await fetchSources())
       setDraft(null)
       setNotice('Sources saved. Applies the next time your feed is built.')
     } catch (err) {
