@@ -10,14 +10,35 @@ import (
 	"github.com/aeron-cap/news-aggregator/internal/database"
 )
 
-// BuildFeed stores candidates before applying a reader's preferences.
 func BuildFeed(ctx context.Context, store *database.Store, userID int64, articles []Article) error {
+	interests, err := store.GetInterests(ctx, userID)
+	if err != nil {
+		return err
+	}
+	config := NewInterestConfig(interests)
 	now := time.Now().UTC()
-	stored := make([]database.Article, 0, len(articles))
+	candidates := make([]Article, 0, len(articles))
 	for _, article := range articles {
 		if strings.TrimSpace(article.Link) == "" || strings.TrimSpace(article.Title) == "" {
 			continue
 		}
+		article.RelevanceScore = relevance(article, config)
+		article.RecencyScore = recency(article, now)
+		article.WeightedScore = weightedScore(article)
+		candidates = append(candidates, article)
+	}
+	candidates = limitAuthors(1, filterOldArticles(candidates, 1, 0, 0))
+	unique := make([]Article, 0, len(candidates))
+	seenURLs := map[string]bool{}
+	for _, article := range candidates {
+		if !seenURLs[article.Link] {
+			seenURLs[article.Link] = true
+			unique = append(unique, article)
+		}
+	}
+	candidates = giveTopArticles(10, unique)
+	stored := make([]database.Article, 0, len(candidates))
+	for _, article := range candidates {
 		date, err := time.Parse(time.RFC3339, article.Date)
 		sourceDate := sql.NullTime{Time: date, Valid: err == nil}
 		author := sql.NullString{}
@@ -34,11 +55,10 @@ func BuildFeed(ctx context.Context, store *database.Store, userID int64, article
 	if err := store.InsertArticles(ctx, stored); err != nil {
 		return err
 	}
-	_, err := GetFeed(ctx, store, userID)
+	_, err = GetFeed(ctx, store, userID)
 	return err
 }
 
-// GetFeed ranks unread candidates for this reader and persists only their scores.
 func GetFeed(ctx context.Context, store *database.Store, userID int64) ([]database.Article, error) {
 	articles, err := store.GetUnreadArticles(ctx, userID)
 	if err != nil {

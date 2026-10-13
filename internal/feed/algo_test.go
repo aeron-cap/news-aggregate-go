@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -101,17 +102,23 @@ func TestPersonalFeedRankingAndReadIsolation(t *testing.T) {
 	}
 }
 
-func TestBuildFeedKeepsCandidatesAndDeduplicatesCopies(t *testing.T) {
+func TestBuildFeedInsertsOnlyTenRankedUniqueArticles(t *testing.T) {
 	store, db := feedTestStore(t)
 	ctx := context.Background()
+	if _, err := db.Exec(`INSERT INTO interests(id,keyword) VALUES(1,'science')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpdateInterests(ctx, 1, map[int64]database.InterestUpdate{1: {IsActive: true, IsMain: true}}); err != nil {
+		t.Fatal(err)
+	}
 	if err := store.InsertSources(ctx, 1, []database.SourcesUpdate{{Name: "Other", URL: "https://other.example/rss", IsActive: true}}); err != nil {
 		t.Fatal(err)
 	}
 	articles := []Article{}
 	for i := 0; i < 12; i++ {
-		articles = append(articles, Article{SourceID: 1, Title: fmt.Sprintf("Story %d", i), Link: fmt.Sprintf("https://example.com/%d", i), Date: time.Now().UTC().Format(time.RFC3339)})
+		articles = append(articles, Article{SourceID: 1, Title: strings.Repeat("science ", i+1), Link: fmt.Sprintf("https://example.com/%d", i), Date: time.Now().UTC().Format(time.RFC3339)})
 	}
-	duplicate := articles[0]
+	duplicate := articles[11]
 	if err := db.QueryRow(`SELECT id FROM sources WHERE url = 'https://other.example/rss'`).Scan(&duplicate.SourceID); err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +127,7 @@ func TestBuildFeedKeepsCandidatesAndDeduplicatesCopies(t *testing.T) {
 		t.Fatal(err)
 	}
 	var count int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM articles`).Scan(&count); err != nil || count != 13 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM articles`).Scan(&count); err != nil || count != 10 {
 		t.Fatalf("candidate count=%d err=%v", count, err)
 	}
 	items, err := GetFeed(ctx, store, 1)
@@ -134,7 +141,10 @@ func TestBuildFeedKeepsCandidatesAndDeduplicatesCopies(t *testing.T) {
 		}
 		seen[item.URL] = true
 	}
-	if err := store.MarkArticleAsRead(ctx, 1, 1); err != nil {
+	if items[0].URL != duplicate.Link || seen["https://example.com/0"] || seen["https://example.com/1"] {
+		t.Fatalf("insertion did not select the ten highest ranked articles: %+v", items)
+	}
+	if err := store.MarkArticleAsRead(ctx, 1, items[0].ID); err != nil {
 		t.Fatal(err)
 	}
 	items, err = store.GetUnreadArticles(ctx, 1)
@@ -145,6 +155,26 @@ func TestBuildFeedKeepsCandidatesAndDeduplicatesCopies(t *testing.T) {
 		if item.URL == duplicate.Link {
 			t.Fatal("another source copy resurrected a read article")
 		}
+	}
+}
+
+func TestBuildFeedFiltersCandidatesBeforeInsertionCap(t *testing.T) {
+	store, db := feedTestStore(t)
+	now := time.Now().UTC()
+	articles := []Article{
+		{SourceID: 1, Title: "Old story", Link: "https://example.com/old", Date: now.AddDate(-2, 0, 0).Format(time.RFC3339)},
+		{SourceID: 1, Title: "", Link: "https://example.com/empty-title", Date: now.Format(time.RFC3339)},
+		{SourceID: 1, Title: "Missing URL", Date: now.Format(time.RFC3339)},
+	}
+	for i := 0; i < 12; i++ {
+		articles = append(articles, Article{SourceID: 1, Title: fmt.Sprintf("Story %d", i), Link: fmt.Sprintf("https://example.com/%d", i), Date: now.Format(time.RFC3339), Authors: []Person{{Name: "Same author"}}})
+	}
+	if err := BuildFeed(context.Background(), store, 1, articles); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM articles`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("stored count=%d err=%v, want one recent article from the author", count, err)
 	}
 }
 
