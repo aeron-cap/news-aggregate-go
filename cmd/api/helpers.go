@@ -19,7 +19,7 @@ func respondWithError(w http.ResponseWriter, code int, message, details string) 
 	respondWithJSON(w, code, map[string]string{
 		"error":   message,
 		"details": details,
-	})	
+	})
 }
 
 func hashSession(token string) string {

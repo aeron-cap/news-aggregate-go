@@ -40,7 +40,7 @@ function App() {
             })}
           </time>
         </div>
-        <h1>The Daily Brief</h1>
+        <h1>PocketNews</h1>
         <p>A little perspective. A few good reads.</p>
       </header>
 
@@ -61,7 +61,7 @@ function App() {
       </div>
 
       <footer className="newspaper-footer">
-        <span>The Daily Brief</span>
+        <span>PocketNews</span>
         <span>Good stories, less noise.</span>
       </footer>
     </div>

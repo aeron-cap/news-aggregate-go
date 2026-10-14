@@ -231,6 +231,7 @@ func (a *app) fetchInterests(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	interests, err := a.store.GetInterests(r.Context(), userID)
 	if err != nil {
 		a.logger.ErrorContext(r.Context(), "fetch interests failed", "err", err)
@@ -346,10 +347,16 @@ func (source sourcesPayload) validatedSourceUpdate() (database.SourcesUpdate, er
 	if name == "" || feedURL == "" || source.IsActive == nil {
 		return database.SourcesUpdate{}, errors.New("Each source must include non-empty name and url fields and a boolean is_active field")
 	}
+
 	parsed, err := url.Parse(feedURL)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
+	if err != nil {
 		return database.SourcesUpdate{}, errors.New("Each source URL must be an absolute HTTP or HTTPS URL")
 	}
+
+	if err := feed.ValidateFeedURL(parsed); err != nil {
+		return database.SourcesUpdate{}, err
+	}
+
 	return database.SourcesUpdate{Name: name, URL: feedURL, IsActive: *source.IsActive}, nil
 }
 
@@ -358,6 +365,7 @@ func (a *app) fetchSources(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	sources, err := a.store.GetAllSources(r.Context(), userID)
 	if err != nil {
 		a.logger.ErrorContext(r.Context(), "fetch sources failed", "err", err)

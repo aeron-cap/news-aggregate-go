@@ -2,7 +2,9 @@ package feed
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -38,6 +40,10 @@ type rawFeed struct {
 }
 
 func CreateFeed(ctx context.Context, store *database.Store, userID int64) (bool, error) {
+	return createFeed(ctx, store, userID, defaultFeedHTTPClient)
+}
+
+func createFeed(ctx context.Context, store *database.Store, userID int64, client *http.Client) (bool, error) {
 	isRefreshNeeded, err := isRefreshNeeded(ctx, store, userID)
 	if err != nil {
 		return false, err
@@ -59,14 +65,17 @@ func CreateFeed(ctx context.Context, store *database.Store, userID int64) (bool,
 	feeds := make(chan rawFeed)
 	workersDone := make(chan bool)
 	done := make(chan bool)
+	fetchErrors := make(chan error, len(sources))
+	successfulFeeds := 0
 	articles := []Article{}
 
 	for i := 0; i < workers; i++ {
 		fp := gofeed.NewParser()
 		go func() {
 			for s := range sc {
-				feed, err := fp.ParseURLWithContext(s.URL, ctx)
+				feed, err := fetchSourceFeed(ctx, client, fp, s.URL)
 				if err != nil {
+					fetchErrors <- fmt.Errorf("fetch source %d: %w", s.ID, err)
 					continue
 				}
 				feeds <- rawFeed{SourceID: s.ID, Feed: feed}
@@ -89,6 +98,7 @@ func CreateFeed(ctx context.Context, store *database.Store, userID int64) (bool,
 				continue
 			}
 			articles = append(articles, article...)
+			successfulFeeds++
 		}
 		close(done)
 	}()
@@ -102,6 +112,16 @@ func CreateFeed(ctx context.Context, store *database.Store, userID int64) (bool,
 
 	if err := ctx.Err(); err != nil {
 		return false, err
+	}
+	if successfulFeeds == 0 {
+		close(fetchErrors)
+		var failures []error
+		for err := range fetchErrors {
+			failures = append(failures, err)
+		}
+		if len(failures) > 0 {
+			return false, fmt.Errorf("no sources could be fetched: %w", errors.Join(failures...))
+		}
 	}
 
 	err = BuildFeed(ctx, store, userID, articles)

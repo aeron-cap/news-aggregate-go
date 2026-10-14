@@ -192,24 +192,25 @@ func TestCreateFeedFetchesOnlySelectedReaderSources(t *testing.T) {
 		fmt.Fprintf(w, `<?xml version="1.0"?><rss version="2.0"><channel><title>Test feed</title><link>https://example.com</link><description>Test</description><item><title>%s</title><link>https://example.com%s</link><pubDate>%s</pubDate></item></channel></rss>`, title, r.URL.Path, time.Now().UTC().Format(time.RFC1123Z))
 	}))
 	defer server.Close()
+	client := fixtureFeedClient(t, server.Listener.Addr().String())
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	for _, tc := range []struct {
 		userID int64
 		path   string
 	}{{1, "/science"}, {2, "/technology"}} {
-		if err := store.InsertSources(ctx, tc.userID, []database.SourcesUpdate{{Name: tc.path, URL: server.URL + tc.path, IsActive: true}}); err != nil {
+		if err := store.InsertSources(ctx, tc.userID, []database.SourcesUpdate{{Name: tc.path, URL: "http://feed.example" + tc.path, IsActive: true}}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if refreshed, err := CreateFeed(ctx, store, 1); err != nil || !refreshed {
+	if refreshed, err := createFeed(ctx, store, 1, client); err != nil || !refreshed {
 		t.Fatalf("reader 1 refresh=%v err=%v", refreshed, err)
 	}
 	items, err := GetFeed(ctx, store, 2)
 	if err != nil || len(items) != 0 {
 		t.Fatalf("reader 2 saw another reader's source: %+v err=%v", items, err)
 	}
-	if refreshed, err := CreateFeed(ctx, store, 2); err != nil || !refreshed {
+	if refreshed, err := createFeed(ctx, store, 2, client); err != nil || !refreshed {
 		t.Fatalf("reader 2 refresh=%v err=%v", refreshed, err)
 	}
 	for _, tc := range []struct {
