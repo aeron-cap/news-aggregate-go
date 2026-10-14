@@ -113,6 +113,7 @@ func createFeed(ctx context.Context, store *database.Store, userID int64, client
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
+	
 	if successfulFeeds == 0 {
 		close(fetchErrors)
 		var failures []error

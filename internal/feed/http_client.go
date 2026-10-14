@@ -142,11 +142,13 @@ func (d publicFeedDialer) DialContext(ctx context.Context, network, address stri
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		
 		target := net.JoinHostPort(ip.Unmap().String(), port)
 		conn, err := d.dial(ctx, network, target)
 		if err == nil {
 			return conn, nil
 		}
+		
 		failures = append(failures, err)
 	}
 	
