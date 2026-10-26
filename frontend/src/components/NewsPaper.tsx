@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { fetchToday, markArticleAsRead } from '../../api'
 
 interface Article {
-  id: number
+  id: string
   title: string
   author: string | null
   url: string
@@ -27,7 +27,7 @@ function articleDate(value: string | null) {
     : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-function ArticleCard({ article, onRead }: { article: Article; onRead: (id: number) => Promise<void> }) {
+function ArticleCard({ article, onRead }: { article: Article; onRead: (id: string) => Promise<void> }) {
   const [showReadPrompt, setShowReadPrompt] = useState(false)
   const [markingRead, setMarkingRead] = useState(false)
   const [readError, setReadError] = useState<string | null>(null)
@@ -159,7 +159,7 @@ function NewsPaper() {
     return () => { active = false }
   }, [edition])
 
-  async function confirmArticleRead(id: number) {
+  async function confirmArticleRead(id: string) {
     setPendingReads((count) => count + 1)
     try {
       await markArticleAsRead(id)

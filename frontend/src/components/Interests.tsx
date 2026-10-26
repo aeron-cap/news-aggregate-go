@@ -83,7 +83,7 @@ function Interests() {
     setSaveError(null)
   }
 
-  function toggleInterest(id: number, field: 'is_main' | 'is_active') {
+  function toggleInterest(id: string, field: 'is_main' | 'is_active') {
     setDraft((current) => current?.map((interest) => (
       interest.id === id ? { ...interest, [field]: !interest[field] } : interest
     )) ?? null)
@@ -93,7 +93,7 @@ function Interests() {
   async function saveChanges() {
     if (!draft || saving || changedInterests.length === 0) return
 
-    const updates: Record<number, InterestUpdate> = {}
+    const updates: Record<string, InterestUpdate> = {}
     for (const interest of changedInterests) {
       updates[interest.id] = { isActive: interest.is_active, isMain: interest.is_main }
     }

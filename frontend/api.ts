@@ -45,7 +45,7 @@ export async function fetchToday() {
   return response.json();
 }
 
-export async function markArticleAsRead(id: number) {
+export async function markArticleAsRead(id: string) {
   const response = await fetchWithSession(`/articles/${id}/read`, {
     method: "POST",
   });
@@ -70,7 +70,7 @@ export interface InterestUpdate {
   isMain: boolean;
 }
 
-export async function changeInterests(updates: Record<number, InterestUpdate>) {
+export async function changeInterests(updates: Record<string, InterestUpdate>) {
   const response = await fetchWithSession("/change-interests", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -94,7 +94,7 @@ export async function fetchSources(): Promise<Source[]> {
 
 async function saveSources(
   path: string,
-  payload: SourceFields[] | Record<number, SourceFields>,
+  payload: SourceFields[] | Record<string, SourceFields>,
 ) {
   const response = await fetchWithSession(path, {
     method: "POST",
@@ -117,6 +117,6 @@ export function insertSources(sources: SourceFields[]) {
   return saveSources("/sources", sources);
 }
 
-export function updateSources(updates: Record<number, SourceFields>) {
+export function updateSources(updates: Record<string, SourceFields>) {
   return saveSources("/change-sources", updates);
 }

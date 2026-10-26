@@ -5,7 +5,7 @@ export interface SourceFields {
 }
 
 export interface Source extends SourceFields {
-  id: number
+  id: string
 }
 
 export type SourceSortKey = 'name' | 'url' | 'status'
@@ -26,7 +26,7 @@ export function filterAndSortSources(sources: Source[], search: string, sort: So
         : sort.key === 'url'
           ? a.url.localeCompare(b.url, undefined, { sensitivity: 'base', numeric: true })
           : nameOrder
-      return (sort.direction === 'asc' ? primaryOrder : -primaryOrder) || nameOrder || a.id - b.id
+      return (sort.direction === 'asc' ? primaryOrder : -primaryOrder) || nameOrder || a.id.localeCompare(b.id)
     })
 }
 

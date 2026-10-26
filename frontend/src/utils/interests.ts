@@ -1,5 +1,5 @@
 export interface Interest {
-  id: number
+  id: string
   keyword: string
   weight: number
   is_main: boolean
@@ -24,6 +24,6 @@ export function filterAndSortInterests(interests: Interest[], search: string, so
         : sort.key === 'status'
           ? Number(b.is_active) - Number(a.is_active)
           : nameOrder
-      return (sort.direction === 'asc' ? primaryOrder : -primaryOrder) || nameOrder || a.id - b.id
+      return (sort.direction === 'asc' ? primaryOrder : -primaryOrder) || nameOrder || a.id.localeCompare(b.id)
     })
 }

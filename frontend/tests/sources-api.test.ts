@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { fetchSources, insertSources, updateSources } from '../api.ts'
+import { changeInterests, fetchSources, insertSources, markArticleAsRead, updateSources } from '../api.ts'
 
 test('source API uses the registered routes and snake_case fields', async (t) => {
   const requests: { url: string; options?: RequestInit }[] = []
-  const source = { id: 1, name: 'Science', url: 'https://example.com/rss', is_active: false }
+  const source = { id: '00000000-0000-4000-8000-000000000001', name: 'Science', url: 'https://example.com/rss', is_active: false }
   t.mock.method(globalThis, 'fetch', async (url: string, options?: RequestInit) => {
     requests.push({ url, options })
     return new Response(JSON.stringify(options?.method === 'POST' ? { details: 'Saved' } : [source]), { status: 200 })
@@ -12,7 +12,7 @@ test('source API uses the registered routes and snake_case fields', async (t) =>
   assert.deepEqual(await fetchSources(), [source])
   const fields = { name: source.name, url: source.url, is_active: source.is_active }
   await insertSources([fields])
-  await updateSources({ 1: fields })
+  await updateSources({ '00000000-0000-4000-8000-000000000001': fields })
   assert.deepEqual(requests.map((request) => request.url), [
     '/api/set-token', '/api/sources', '/api/sources', '/api/change-sources',
   ])
@@ -20,7 +20,7 @@ test('source API uses the registered routes and snake_case fields', async (t) =>
   assert.equal(requests[2].options?.method, 'POST')
   assert.deepEqual(requests[2].options?.headers, { 'Content-Type': 'application/json' })
   assert.deepEqual(JSON.parse(requests[2].options?.body as string), [fields])
-  assert.deepEqual(JSON.parse(requests[3].options?.body as string), { 1: fields })
+  assert.deepEqual(JSON.parse(requests[3].options?.body as string), { '00000000-0000-4000-8000-000000000001': fields })
 })
 
 test('source API reports server errors and handles non-JSON errors', async (t) => {
@@ -61,4 +61,22 @@ test('persistent unauthorized responses do not loop', async (t) => {
   await assert.rejects(fetchSources(), /Could not load sources/)
   assert.equal(calls.filter((url) => url === '/api/set-token').length, 1)
   assert.equal(calls.filter((url) => url === '/api/sources').length, 2)
+})
+
+test('article routes and interest updates preserve UUID strings', async (t) => {
+  const id = 'f5bf3e47-62e2-46e5-881d-ab72e3b421a0'
+  const requests: { url: string; options?: RequestInit }[] = []
+  t.mock.method(globalThis, 'fetch', async (url: string, options?: RequestInit) => {
+    requests.push({ url, options })
+    return new Response(JSON.stringify({ details: 'Saved' }), { status: 200 })
+  })
+  await markArticleAsRead(id)
+  await changeInterests({ [id]: { isActive: true, isMain: false } })
+  const articleRequest = requests.find((request) => request.url.endsWith('/read'))
+  assert.equal(articleRequest?.url, `/api/articles/${id}/read`)
+  assert.equal(articleRequest?.options?.method, 'POST')
+  const interestRequest = requests.find((request) => request.url.endsWith('/change-interests'))
+  assert.deepEqual(JSON.parse(interestRequest?.options?.body as string), {
+    [id]: { isActive: true, isMain: false },
+  })
 })

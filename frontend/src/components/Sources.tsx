@@ -58,7 +58,7 @@ function Sources() {
     setNotice(null)
   }
 
-  function changeSource(id: number, update: Partial<SourceFields>) {
+  function changeSource(id: string, update: Partial<SourceFields>) {
     setDraft((current) => current?.map((source) => source.id === id ? { ...source, ...update } : source) ?? null)
     clearFeedback()
   }
@@ -76,7 +76,7 @@ function Sources() {
     if (!draft || saving || changes.length === 0) return
     const message = validationError(draft)
     if (message) { setSaveError(message); return }
-    const updates: Record<number, SourceFields> = {}
+    const updates: Record<string, SourceFields> = {}
     for (const source of changes) updates[source.id] = normalizeSource(source)
     setSaving(true)
     clearFeedback()
