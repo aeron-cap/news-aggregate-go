@@ -3,32 +3,43 @@ package scripts
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
-	"strconv"
+	"path/filepath"
+	"runtime"
 	"time"
+
+	"github.com/google/uuid"
 )
 
-var PythonBin = func() string {
+func pythonBin() string {
 	if bin := os.Getenv("PYTHON_BIN"); bin != "" {
 		return bin
 	}
+	bin := filepath.Join(".venv", "bin", "python")
+	if runtime.GOOS == "windows" {
+		bin = filepath.Join(".venv", "Scripts", "python.exe")
+	}
+	if info, err := os.Stat(bin); err == nil && !info.IsDir() {
+		return bin
+	}
 	return "python"
-}()
+}
 
-func RunResnik(ctx context.Context, scriptPath string, userID int64, dbPath string) error {
+func RunResnik(ctx context.Context, scriptPath string, userID uuid.UUID, databaseURL string) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, PythonBin, scriptPath, "--user-id", strconv.FormatInt(userID, 10), "--db", dbPath)
-	out, err := cmd.CombinedOutput()
+	cmd := exec.CommandContext(ctx, pythonBin(), scriptPath, "--user-id", userID.String())
+	// Keep credentials out of process arguments and captured error output.
+	cmd.Env = append(os.Environ(), "DATABASE_URL="+databaseURL)
+	err := cmd.Run()
 
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			log.Printf("Script %s timed out in %s\n", scriptPath, out)
+			return fmt.Errorf("interest scoring timed out: %w", ctx.Err())
 		}
-		return fmt.Errorf("Failed to run script %s: %v\nOutput: %s", scriptPath, err, out)
+		return fmt.Errorf("interest scoring failed: %w", err)
 	}
 
 	return nil
