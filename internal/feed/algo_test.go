@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/aeron-cap/news-aggregator/internal/database"
+	"github.com/aeron-cap/news-aggregator/internal/testutil"
+	"github.com/google/uuid"
 )
 
 func TestRelevanceOnlyUsesActiveInterests(t *testing.T) {
@@ -37,25 +39,20 @@ func feedTestStore(t *testing.T) (*database.Store, *sql.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(`PRAGMA foreign_keys=ON`); err != nil {
-		t.Fatal(err)
-	}
+	db, _ := testutil.Postgres(t)
 	if _, err := db.Exec(string(schema)); err != nil {
 		t.Fatal(err)
 	}
 	store := database.NewStore(db)
-	for _, token := range []string{"reader-1", "reader-2"} {
-		if err := store.CreateAnonymousSession(context.Background(), token, time.Now().Add(time.Hour)); err != nil {
+	for index, token := range []string{"reader-1", "reader-2"} {
+		if _, err := db.Exec(`INSERT INTO users(id, token, expires_at) VALUES ($1, $2, $3)`, testutil.ID(index+1), token, time.Now().Add(time.Hour)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, userID := range []int64{1, 2} {
+	if _, err := db.Exec(`INSERT INTO sources(id,name,url) VALUES ($1, 'Shared', 'https://example.com/rss')`, testutil.ID(1)); err != nil {
+		t.Fatal(err)
+	}
+	for _, userID := range []uuid.UUID{testutil.ID(1), testutil.ID(2)} {
 		if err := store.InsertSources(context.Background(), userID, []database.SourcesUpdate{{Name: "Shared", URL: "https://example.com/rss", IsActive: true}}); err != nil {
 			t.Fatal(err)
 		}
@@ -66,37 +63,37 @@ func feedTestStore(t *testing.T) (*database.Store, *sql.DB) {
 func TestPersonalFeedRankingAndReadIsolation(t *testing.T) {
 	store, db := feedTestStore(t)
 	ctx := context.Background()
-	if _, err := db.Exec(`INSERT INTO interests(id,keyword) VALUES(1,'science'),(2,'technology')`); err != nil {
+	if _, err := db.Exec(`INSERT INTO interests(id,keyword) VALUES ( '00000000-0000-4000-8000-000000000001','science'),( '00000000-0000-4000-8000-000000000002','technology')`); err != nil {
 		t.Fatal(err)
 	}
-	for _, tc := range []struct{ userID, interestID int64 }{{1, 1}, {2, 2}} {
-		if err := store.UpdateInterests(ctx, tc.userID, map[int64]database.InterestUpdate{tc.interestID: {IsActive: true, IsMain: true}}); err != nil {
+	for _, tc := range []struct{ userID, interestID uuid.UUID }{{testutil.ID(1), testutil.ID(1)}, {testutil.ID(2), testutil.ID(2)}} {
+		if err := store.UpdateInterests(ctx, tc.userID, map[uuid.UUID]database.InterestUpdate{tc.interestID: {IsActive: true, IsMain: true}}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	if err := BuildFeed(ctx, store, 1, []Article{
-		{SourceID: 1, Title: "Science discovery", Link: "https://example.com/science", Date: now},
-		{SourceID: 1, Title: "Technology launch", Link: "https://example.com/technology", Date: now},
+	if err := BuildFeed(ctx, store, testutil.ID(1), []Article{
+		{SourceID: testutil.ID(1), Title: "Science discovery", Link: "https://example.com/science", Date: now},
+		{SourceID: testutil.ID(1), Title: "Technology launch", Link: "https://example.com/technology", Date: now},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	first, err := GetFeed(ctx, store, 1)
+	first, err := GetFeed(ctx, store, testutil.ID(1))
 	if err != nil || len(first) != 2 || first[0].Title != "Science discovery" {
 		t.Fatalf("first feed=%+v err=%v", first, err)
 	}
-	second, err := GetFeed(ctx, store, 2)
+	second, err := GetFeed(ctx, store, testutil.ID(2))
 	if err != nil || len(second) != 2 || second[0].Title != "Technology launch" {
 		t.Fatalf("second feed=%+v err=%v", second, err)
 	}
-	if err := store.MarkArticleAsRead(ctx, 1, first[0].ID); err != nil {
+	if err := store.MarkArticleAsRead(ctx, testutil.ID(1), first[0].ID); err != nil {
 		t.Fatal(err)
 	}
-	first, err = GetFeed(ctx, store, 1)
+	first, err = GetFeed(ctx, store, testutil.ID(1))
 	if err != nil || len(first) != 1 || first[0].Title != "Technology launch" {
 		t.Fatalf("read first feed=%+v err=%v", first, err)
 	}
-	second, err = GetFeed(ctx, store, 2)
+	second, err = GetFeed(ctx, store, testutil.ID(2))
 	if err != nil || len(second) != 2 {
 		t.Fatalf("reading affected other user: %+v err=%v", second, err)
 	}
@@ -105,32 +102,32 @@ func TestPersonalFeedRankingAndReadIsolation(t *testing.T) {
 func TestBuildFeedInsertsOnlyTenRankedUniqueArticles(t *testing.T) {
 	store, db := feedTestStore(t)
 	ctx := context.Background()
-	if _, err := db.Exec(`INSERT INTO interests(id,keyword) VALUES(1,'science')`); err != nil {
+	if _, err := db.Exec(`INSERT INTO interests(id,keyword) VALUES ( '00000000-0000-4000-8000-000000000001','science')`); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.UpdateInterests(ctx, 1, map[int64]database.InterestUpdate{1: {IsActive: true, IsMain: true}}); err != nil {
+	if err := store.UpdateInterests(ctx, testutil.ID(1), map[uuid.UUID]database.InterestUpdate{testutil.ID(1): {IsActive: true, IsMain: true}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.InsertSources(ctx, 1, []database.SourcesUpdate{{Name: "Other", URL: "https://other.example/rss", IsActive: true}}); err != nil {
+	if err := store.InsertSources(ctx, testutil.ID(1), []database.SourcesUpdate{{Name: "Other", URL: "https://other.example/rss", IsActive: true}}); err != nil {
 		t.Fatal(err)
 	}
 	articles := []Article{}
 	for i := 0; i < 12; i++ {
-		articles = append(articles, Article{SourceID: 1, Title: strings.Repeat("science ", i+1), Link: fmt.Sprintf("https://example.com/%d", i), Date: time.Now().UTC().Format(time.RFC3339)})
+		articles = append(articles, Article{SourceID: testutil.ID(1), Title: strings.Repeat("science ", i+1), Link: fmt.Sprintf("https://example.com/%d", i), Date: time.Now().UTC().Format(time.RFC3339)})
 	}
 	duplicate := articles[11]
 	if err := db.QueryRow(`SELECT id FROM sources WHERE url = 'https://other.example/rss'`).Scan(&duplicate.SourceID); err != nil {
 		t.Fatal(err)
 	}
 	articles = append(articles, duplicate)
-	if err := BuildFeed(ctx, store, 1, articles); err != nil {
+	if err := BuildFeed(ctx, store, testutil.ID(1), articles); err != nil {
 		t.Fatal(err)
 	}
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM articles`).Scan(&count); err != nil || count != 10 {
 		t.Fatalf("candidate count=%d err=%v", count, err)
 	}
-	items, err := GetFeed(ctx, store, 1)
+	items, err := GetFeed(ctx, store, testutil.ID(1))
 	if err != nil || len(items) != 10 {
 		t.Fatalf("feed=%+v err=%v", items, err)
 	}
@@ -144,10 +141,10 @@ func TestBuildFeedInsertsOnlyTenRankedUniqueArticles(t *testing.T) {
 	if items[0].URL != duplicate.Link || seen["https://example.com/0"] || seen["https://example.com/1"] {
 		t.Fatalf("insertion did not select the ten highest ranked articles: %+v", items)
 	}
-	if err := store.MarkArticleAsRead(ctx, 1, items[0].ID); err != nil {
+	if err := store.MarkArticleAsRead(ctx, testutil.ID(1), items[0].ID); err != nil {
 		t.Fatal(err)
 	}
-	items, err = store.GetUnreadArticles(ctx, 1)
+	items, err = store.GetUnreadArticles(ctx, testutil.ID(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,14 +159,14 @@ func TestBuildFeedFiltersCandidatesBeforeInsertionCap(t *testing.T) {
 	store, db := feedTestStore(t)
 	now := time.Now().UTC()
 	articles := []Article{
-		{SourceID: 1, Title: "Old story", Link: "https://example.com/old", Date: now.AddDate(-2, 0, 0).Format(time.RFC3339)},
-		{SourceID: 1, Title: "", Link: "https://example.com/empty-title", Date: now.Format(time.RFC3339)},
-		{SourceID: 1, Title: "Missing URL", Date: now.Format(time.RFC3339)},
+		{SourceID: testutil.ID(1), Title: "Old story", Link: "https://example.com/old", Date: now.AddDate(-2, 0, 0).Format(time.RFC3339)},
+		{SourceID: testutil.ID(1), Title: "", Link: "https://example.com/empty-title", Date: now.Format(time.RFC3339)},
+		{SourceID: testutil.ID(1), Title: "Missing URL", Date: now.Format(time.RFC3339)},
 	}
 	for i := 0; i < 12; i++ {
-		articles = append(articles, Article{SourceID: 1, Title: fmt.Sprintf("Story %d", i), Link: fmt.Sprintf("https://example.com/%d", i), Date: now.Format(time.RFC3339), Authors: []Person{{Name: "Same author"}}})
+		articles = append(articles, Article{SourceID: testutil.ID(1), Title: fmt.Sprintf("Story %d", i), Link: fmt.Sprintf("https://example.com/%d", i), Date: now.Format(time.RFC3339), Authors: []Person{{Name: "Same author"}}})
 	}
-	if err := BuildFeed(context.Background(), store, 1, articles); err != nil {
+	if err := BuildFeed(context.Background(), store, testutil.ID(1), articles); err != nil {
 		t.Fatal(err)
 	}
 	var count int
@@ -180,7 +177,7 @@ func TestBuildFeedFiltersCandidatesBeforeInsertionCap(t *testing.T) {
 
 func TestCreateFeedFetchesOnlySelectedReaderSources(t *testing.T) {
 	store, db := feedTestStore(t)
-	if _, err := db.Exec(`UPDATE user_sources SET is_active=0`); err != nil {
+	if _, err := db.Exec(`UPDATE user_sources SET is_active = FALSE`); err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -196,27 +193,27 @@ func TestCreateFeedFetchesOnlySelectedReaderSources(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	for _, tc := range []struct {
-		userID int64
+		userID uuid.UUID
 		path   string
-	}{{1, "/science"}, {2, "/technology"}} {
+	}{{testutil.ID(1), "/science"}, {testutil.ID(2), "/technology"}} {
 		if err := store.InsertSources(ctx, tc.userID, []database.SourcesUpdate{{Name: tc.path, URL: "http://feed.example" + tc.path, IsActive: true}}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if refreshed, err := createFeed(ctx, store, 1, client); err != nil || !refreshed {
+	if refreshed, err := createFeed(ctx, store, testutil.ID(1), client); err != nil || !refreshed {
 		t.Fatalf("reader 1 refresh=%v err=%v", refreshed, err)
 	}
-	items, err := GetFeed(ctx, store, 2)
+	items, err := GetFeed(ctx, store, testutil.ID(2))
 	if err != nil || len(items) != 0 {
 		t.Fatalf("reader 2 saw another reader's source: %+v err=%v", items, err)
 	}
-	if refreshed, err := createFeed(ctx, store, 2, client); err != nil || !refreshed {
+	if refreshed, err := createFeed(ctx, store, testutil.ID(2), client); err != nil || !refreshed {
 		t.Fatalf("reader 2 refresh=%v err=%v", refreshed, err)
 	}
 	for _, tc := range []struct {
-		userID int64
+		userID uuid.UUID
 		title  string
-	}{{1, "Science story"}, {2, "Technology story"}} {
+	}{{testutil.ID(1), "Science story"}, {testutil.ID(2), "Technology story"}} {
 		items, err := GetFeed(ctx, store, tc.userID)
 		if err != nil || len(items) != 1 || items[0].Title != tc.title {
 			t.Fatalf("reader %d feed=%+v err=%v", tc.userID, items, err)

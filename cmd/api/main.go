@@ -7,17 +7,18 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"sync/atomic"
 	"syscall"
 	"time"
 
+	"github.com/aeron-cap/news-aggregator/internal/config"
 	"github.com/aeron-cap/news-aggregator/internal/database"
 )
 
 type app struct {
-	store  *database.Store
-	logger *slog.Logger
+	store       *database.Store
+	logger      *slog.Logger
+	databaseURL string
 }
 
 const (
@@ -34,24 +35,23 @@ func main() {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	dbPath := os.Getenv("DB_PATH")
-	if dbPath == "" {
-		dbPath = filepath.Join("internal/database", "news.db")
-	}
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		logger.Error("Failed to create database directory", "err", err)
+	if err := config.LoadEnv(".env"); err != nil {
+		logger.Error("Failed to load configuration", "err", err)
+		os.Exit(1)
 	}
 
-	db, err := database.Open(sigCtx, dbPath)
+	databaseURL := database.ConnectionURL()
+	db, err := database.Open(sigCtx, databaseURL)
 	if err != nil {
 		logger.Error("Failed to open database", "err", err)
-		return
+		os.Exit(1)
 	}
 	defer db.Close()
 
 	app := &app{
-		store:  database.NewStore(db),
-		logger: logger,
+		store:       database.NewStore(db),
+		logger:      logger,
+		databaseURL: databaseURL,
 	}
 
 	mux := routes(app)

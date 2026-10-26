@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -16,6 +17,8 @@ import (
 	"time"
 
 	"github.com/aeron-cap/news-aggregator/internal/database"
+	"github.com/aeron-cap/news-aggregator/internal/testutil"
+	"github.com/google/uuid"
 )
 
 func schemaTestApp(t *testing.T) (*app, *sql.DB) {
@@ -24,29 +27,22 @@ func schemaTestApp(t *testing.T) (*app, *sql.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
-		t.Fatal(err)
-	}
+	db, databaseURL := testutil.Postgres(t)
 	if _, err := db.Exec(string(schema)); err != nil {
 		t.Fatalf("load schema.sql: %v", err)
 	}
 	return &app{
-		store:  database.NewStore(db),
-		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		store:       database.NewStore(db),
+		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		databaseURL: databaseURL,
 	}, db
 }
 
 func userTestApp(t *testing.T) (*app, *sql.DB) {
 	t.Helper()
 	a, db := schemaTestApp(t)
-	for _, token := range []string{"handler-user-1", "handler-user-2"} {
-		if err := a.store.CreateAnonymousSession(context.Background(), hashSession(token), time.Now().UTC().Add(time.Hour)); err != nil {
+	for index, token := range []string{"handler-user-1", "handler-user-2"} {
+		if _, err := db.Exec(`INSERT INTO users(id, token, expires_at) VALUES ($1, $2, $3)`, testutil.ID(index+1), hashSession(token), time.Now().UTC().Add(time.Hour)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -60,23 +56,23 @@ func TestChangeInterestsRejectsInvalidPayload(t *testing.T) {
 		`[]`,
 		`{"id":1,"is_active":true}`,
 		`{"abc":{"isActive":true,"isMain":false}}`,
-		`{"0":{"isActive":true,"isMain":false}}`,
+		`{"00000000-0000-0000-0000-000000000000":{"isActive":true,"isMain":false}}`,
 		`{"-1":{"isActive":true,"isMain":false}}`,
-		`{"1":{"isActive":true}}`,
-		`{"1":{"isMain":true}}`,
-		`{"1":null}`,
-		`{"1":{"isActive":null,"isMain":false}}`,
-		`{"1":{"isActive":"true","isMain":false}}`,
-		`{"1":{"isActive":true,"isMain":false,"weight":1}}`,
-		`{"1":{"isActive":true,"isMain":false}} {}`,
-		`{"1":{"isActive":true,"isMain":false}} garbage`,
-		`{"1":{"isActive":true,"isMain":false},"2":{"isActive":false}}`,
+		`{"00000000-0000-4000-8000-000000000001":{"isActive":true}}`,
+		`{"00000000-0000-4000-8000-000000000001":{"isMain":true}}`,
+		`{"00000000-0000-4000-8000-000000000001":null}`,
+		`{"00000000-0000-4000-8000-000000000001":{"isActive":null,"isMain":false}}`,
+		`{"00000000-0000-4000-8000-000000000001":{"isActive":"true","isMain":false}}`,
+		`{"00000000-0000-4000-8000-000000000001":{"isActive":true,"isMain":false,"weight":1}}`,
+		`{"00000000-0000-4000-8000-000000000001":{"isActive":true,"isMain":false}} {}`,
+		`{"00000000-0000-4000-8000-000000000001":{"isActive":true,"isMain":false}} garbage`,
+		`{"00000000-0000-4000-8000-000000000001":{"isActive":true,"isMain":false},"00000000-0000-4000-8000-000000000002":{"isActive":false}}`,
 	} {
 		t.Run(body, func(t *testing.T) {
 			a := &app{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest(http.MethodPost, "/change-interests", strings.NewReader(body))
-			r = r.WithContext(context.WithValue(r.Context(), userIDKey{}, int64(1)))
+			r = r.WithContext(context.WithValue(r.Context(), userIDKey{}, testutil.ID(1)))
 			a.updateInterests(w, r)
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
@@ -88,26 +84,25 @@ func TestChangeInterestsRejectsInvalidPayload(t *testing.T) {
 func TestChangeInterestsMissingIDRollsBack(t *testing.T) {
 	a, db := userTestApp(t)
 	if _, err := db.Exec(`
-		INSERT INTO interests (id, keyword) VALUES (1, 'science');
-		INSERT INTO user_interests (user_id, interest_id, weight, is_active, is_main)
-		VALUES (1, 1, 1, 0, 0), (2, 1, 0.5, 1, 1)
+		INSERT INTO interests (id, keyword) VALUES ( '00000000-0000-4000-8000-000000000001', 'science');
+		INSERT INTO user_interests (user_id, interest_id, weight, is_active, is_main) VALUES ( '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 1, FALSE, FALSE), ( '00000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000001', 0.5, TRUE, TRUE)
 	`); err != nil {
 		t.Fatal(err)
 	}
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodPost, "/change-interests", strings.NewReader(`{"1":{"isActive":true,"isMain":true},"999":{"isActive":false,"isMain":false}}`))
-	r = r.WithContext(context.WithValue(r.Context(), userIDKey{}, int64(1)))
+	r := httptest.NewRequest(http.MethodPost, "/change-interests", strings.NewReader(`{"00000000-0000-4000-8000-000000000001":{"isActive":true,"isMain":true},"00000000-0000-4000-8000-000000000999":{"isActive":false,"isMain":false}}`))
+	r = r.WithContext(context.WithValue(r.Context(), userIDKey{}, testutil.ID(1)))
 	a.updateInterests(w, r)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", w.Code, w.Body.String())
 	}
-	for userID := int64(1); userID <= 2; userID++ {
+	for _, userID := range []uuid.UUID{testutil.ID(1), testutil.ID(2)} {
 		var active, main bool
-		if err := db.QueryRow(`SELECT is_active, is_main FROM user_interests WHERE user_id = ? AND interest_id = 1`, userID).Scan(&active, &main); err != nil {
+		if err := db.QueryRow(`SELECT is_active, is_main FROM user_interests WHERE user_id = $1 AND interest_id = '00000000-0000-4000-8000-000000000001'`, userID).Scan(&active, &main); err != nil {
 			t.Fatal(err)
 		}
-		if active != (userID == 2) || main != (userID == 2) {
-			t.Fatalf("user %d interest changed despite failed request: active=%v main=%v", userID, active, main)
+		if active != (userID == testutil.ID(2)) || main != (userID == testutil.ID(2)) {
+			t.Fatalf("user %s interest changed despite failed request: active=%v main=%v", userID, active, main)
 		}
 	}
 }
@@ -121,7 +116,7 @@ func sourceRequest(a *app, method, path, body string) *httptest.ResponseRecorder
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(method, path, strings.NewReader(body))
 	r.AddCookie(&http.Cookie{Name: CookieName, Value: "handler-user-1"})
-	r = r.WithContext(context.WithValue(r.Context(), userIDKey{}, int64(1)))
+	r = r.WithContext(context.WithValue(r.Context(), userIDKey{}, testutil.ID(1)))
 	routes(a).ServeHTTP(w, r)
 	return w
 }
@@ -133,9 +128,9 @@ func TestFetchSourcesIncludesInactive(t *testing.T) {
 		t.Fatalf("empty sources: status=%d body=%s", w.Code, w.Body.String())
 	}
 	if _, err := db.Exec(`
-		INSERT INTO sources (id, name, url, is_seeded) VALUES (1, 'Science', 'https://science.example/rss', 1), (2, 'Sports', 'https://sports.example/rss', 1);
-		INSERT INTO user_sources (user_id, source_id, is_active) VALUES (1, 1, 1), (1, 2, 0), (2, 1, 0), (2, 2, 1)
-	`); err != nil {
+		INSERT INTO sources (id, name, url, is_seeded) VALUES ( '00000000-0000-4000-8000-000000000001', 'Science', 'https://science.example/rss', TRUE), ( '00000000-0000-4000-8000-000000000002', 'Sports', 'https://sports.example/rss', TRUE);
+		INSERT INTO user_sources (user_id, source_id, is_active) VALUES ( '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', TRUE), ( '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002', FALSE), ( '00000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000001', FALSE), ( '00000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000002', TRUE);
+`); err != nil {
 		t.Fatal(err)
 	}
 	w = sourceRequest(a, http.MethodGet, "/sources", "")
@@ -143,7 +138,7 @@ func TestFetchSourcesIncludesInactive(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &sources); err != nil {
 		t.Fatal(err)
 	}
-	if w.Code != http.StatusOK || len(sources) != 2 || sources[0].ID != 1 || !sources[0].IsActive || sources[1].ID != 2 || sources[1].IsActive {
+	if w.Code != http.StatusOK || len(sources) != 2 || sources[0].ID != testutil.ID(1) || !sources[0].IsActive || sources[1].ID != testutil.ID(2) || sources[1].IsActive {
 		t.Fatalf("status=%d sources=%+v", w.Code, sources)
 	}
 }
@@ -163,18 +158,18 @@ func TestInsertSourcesInsertsExactlyRequestedRows(t *testing.T) {
 	}
 	var name, url string
 	var active bool
-	if err := db.QueryRow(`SELECT s.name, s.url, us.is_active FROM sources s JOIN user_sources us ON us.source_id = s.id WHERE us.user_id = 1 AND s.id = 1`).Scan(&name, &url, &active); err != nil {
+	if err := db.QueryRow(`SELECT s.name, s.url, us.is_active FROM sources s JOIN user_sources us ON us.source_id = s.id WHERE us.user_id = '00000000-0000-4000-8000-000000000001' AND s.url = 'https://science.example/rss'`).Scan(&name, &url, &active); err != nil {
 		t.Fatal(err)
 	}
 	if name != "Science" || url != "https://science.example/rss" || !active {
 		t.Fatalf("unexpected inserted source: %q %q %v", name, url, active)
 	}
 	var seeded bool
-	if err := db.QueryRow(`SELECT is_seeded FROM sources WHERE id = 1`).Scan(&seeded); err != nil || seeded {
+	if err := db.QueryRow(`SELECT is_seeded FROM sources WHERE url = 'https://science.example/rss'`).Scan(&seeded); err != nil || seeded {
 		t.Fatalf("user-added source marked seeded: seeded=%v err=%v", seeded, err)
 	}
 	var otherSubscriptions int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM user_sources WHERE user_id = 2`).Scan(&otherSubscriptions); err != nil || otherSubscriptions != 0 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM user_sources WHERE user_id = '00000000-0000-4000-8000-000000000002'`).Scan(&otherSubscriptions); err != nil || otherSubscriptions != 0 {
 		t.Fatalf("request changed user 2 subscriptions: count=%d err=%v", otherSubscriptions, err)
 	}
 }
@@ -206,7 +201,7 @@ func TestSourcesRejectInvalidPayload(t *testing.T) {
 			if path == "/sources" {
 				return "[" + source + "]"
 			}
-			return `{"1":` + source + "}"
+			return `{"00000000-0000-4000-8000-000000000001":` + source + "}"
 		}
 		for _, source := range invalidSources {
 			bodies = append(bodies, wrap(source))
@@ -214,7 +209,7 @@ func TestSourcesRejectInvalidPayload(t *testing.T) {
 		if path == "/sources" {
 			bodies = append(bodies, "["+valid+`,{"name":"Invalid"}]`)
 		} else {
-			bodies = append(bodies, `{"1":`+valid+`,"2":{"name":"Invalid"}}`)
+			bodies = append(bodies, `{"00000000-0000-4000-8000-000000000001":`+valid+`,"00000000-0000-4000-8000-000000000002":{"name":"Invalid"}}`)
 		}
 		bodies = append(bodies, wrap(valid)+" {}", wrap(valid)+" garbage", wrap(valid)+strings.Repeat(" ", 1048576))
 		if path == "/change-sources" {
@@ -243,15 +238,15 @@ func TestUpdateSourcesAndMissingID(t *testing.T) {
 		t.Run(map[bool]string{false: "success", true: "missing ID rolls back"}[missing], func(t *testing.T) {
 			a, db := sourceTestApp(t)
 			if _, err := db.Exec(`
-				INSERT INTO sources (id, name, url) VALUES (1, 'Original', 'https://original.example/rss');
-				INSERT INTO user_sources (user_id, source_id, is_active) VALUES (1, 1, 1), (2, 1, 1)
-			`); err != nil {
+				INSERT INTO sources (id, name, url) VALUES ( '00000000-0000-4000-8000-000000000001', 'Original', 'https://original.example/rss');
+				INSERT INTO user_sources (user_id, source_id, is_active) VALUES ( '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', TRUE), ( '00000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000001', TRUE);
+`); err != nil {
 				t.Fatal(err)
 			}
-			body := `{"1":{"name":" Renamed ","url":" https://renamed.example/rss ","is_active":false}`
+			body := `{"00000000-0000-4000-8000-000000000001":{"name":" Renamed ","url":" https://renamed.example/rss ","is_active":false}`
 			wantStatus := http.StatusOK
 			if missing {
-				body += `,"999":{"name":"Missing","url":"https://missing.example/rss","is_active":true}`
+				body += `,"00000000-0000-4000-8000-000000000999":{"name":"Missing","url":"https://missing.example/rss","is_active":true}`
 				wantStatus = http.StatusNotFound
 			}
 			w := sourceRequest(a, http.MethodPost, "/change-sources", body+"}")
@@ -264,7 +259,7 @@ func TestUpdateSourcesAndMissingID(t *testing.T) {
 			if missing {
 				wantURL = "https://original.example/rss"
 			}
-			if err := db.QueryRow(`SELECT s.name, s.url, us.is_active FROM sources s JOIN user_sources us ON us.source_id = s.id WHERE us.user_id = 1 AND s.url = ?`, wantURL).Scan(&name, &url, &active); err != nil {
+			if err := db.QueryRow(`SELECT s.name, s.url, us.is_active FROM sources s JOIN user_sources us ON us.source_id = s.id WHERE us.user_id = '00000000-0000-4000-8000-000000000001' AND s.url = $1`, wantURL).Scan(&name, &url, &active); err != nil {
 				t.Fatal(err)
 			}
 			if missing {
@@ -275,11 +270,11 @@ func TestUpdateSourcesAndMissingID(t *testing.T) {
 				t.Fatalf("source not updated: %q %q %v", name, url, active)
 			}
 			var otherActive bool
-			if err := db.QueryRow(`SELECT is_active FROM user_sources WHERE user_id = 2 AND source_id = 1`).Scan(&otherActive); err != nil || !otherActive {
+			if err := db.QueryRow(`SELECT is_active FROM user_sources WHERE user_id = '00000000-0000-4000-8000-000000000002' AND source_id = '00000000-0000-4000-8000-000000000001'`).Scan(&otherActive); err != nil || !otherActive {
 				t.Fatalf("request changed user 2 subscription: active=%v err=%v", otherActive, err)
 			}
 			var originalName, originalURL string
-			if err := db.QueryRow(`SELECT name, url FROM sources WHERE id = 1`).Scan(&originalName, &originalURL); err != nil || originalName != "Original" || originalURL != "https://original.example/rss" {
+			if err := db.QueryRow(`SELECT name, url FROM sources WHERE id = '00000000-0000-4000-8000-000000000001'`).Scan(&originalName, &originalURL); err != nil || originalName != "Original" || originalURL != "https://original.example/rss" {
 				t.Fatalf("request rewrote shared source: name=%q url=%q err=%v", originalName, originalURL, err)
 			}
 		})
@@ -290,7 +285,7 @@ func TestSourcesDatabaseErrors(t *testing.T) {
 	for _, tc := range []struct{ method, path, body string }{
 		{http.MethodGet, "/sources", ""},
 		{http.MethodPost, "/sources", `[{"name":"Example","url":"https://example.com/rss","is_active":true}]`},
-		{http.MethodPost, "/change-sources", `{"1":{"name":"Example","url":"https://example.com/rss","is_active":true}}`},
+		{http.MethodPost, "/change-sources", `{"00000000-0000-4000-8000-000000000001":{"name":"Example","url":"https://example.com/rss","is_active":true}}`},
 	} {
 		t.Run(tc.path+tc.method, func(t *testing.T) {
 			a, db := sourceTestApp(t)
@@ -326,11 +321,15 @@ func TestUpdateTokenHandler(t *testing.T) {
 			a, db := sessionTestApp(t)
 			ctx := context.Background()
 			originalHash := hashSession("original-token")
-			originalExpiry := time.Now().UTC().Add(time.Hour)
+			originalExpiry := time.Now().UTC().Truncate(time.Microsecond).Add(time.Hour)
 			if tc.expired {
-				originalExpiry = time.Now().UTC().Add(-time.Hour)
+				originalExpiry = time.Now().UTC().Truncate(time.Microsecond).Add(-time.Hour)
 			}
 			if err := a.store.CreateAnonymousSession(ctx, originalHash, originalExpiry); err != nil {
+				t.Fatal(err)
+			}
+			var originalID uuid.UUID
+			if err := db.QueryRow(`SELECT id FROM users WHERE token = $1`, originalHash).Scan(&originalID); err != nil {
 				t.Fatal(err)
 			}
 			if tc.dbFailure {
@@ -356,7 +355,7 @@ func TestUpdateTokenHandler(t *testing.T) {
 				if !tc.dbFailure {
 					var token string
 					var expiry time.Time
-					if err := db.QueryRow(`SELECT token, expires_at FROM users WHERE id = 1`).Scan(&token, &expiry); err != nil {
+					if err := db.QueryRow(`SELECT token, expires_at FROM users WHERE id = $1`, originalID).Scan(&token, &expiry); err != nil {
 						t.Fatal(err)
 					}
 					if token != originalHash || !expiry.Equal(originalExpiry) {
@@ -376,13 +375,13 @@ func TestUpdateTokenHandler(t *testing.T) {
 			if cookie.Path != "/" || !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteLaxMode {
 				t.Fatalf("unexpected cookie attributes: %+v", cookie)
 			}
-			if cookie.MaxAge != 15*24*60*60 || !cookie.Expires.After(time.Now().UTC().Add(14*24*time.Hour)) {
+			if cookie.MaxAge != 15*24*60*60 || !cookie.Expires.After(time.Now().UTC().Truncate(time.Microsecond).Add(14*24*time.Hour)) {
 				t.Fatal("replacement cookie does not have the expected lifetime")
 			}
 			if _, err := a.store.FetchUserID(ctx, originalHash); !errors.Is(err, sql.ErrNoRows) {
 				t.Fatalf("old token lookup = %v, want sql.ErrNoRows", err)
 			}
-			if id, err := a.store.FetchUserID(ctx, hashSession(cookie.Value)); err != nil || id != 1 {
+			if id, err := a.store.FetchUserID(ctx, hashSession(cookie.Value)); err != nil || id != originalID {
 				t.Fatalf("replacement token lookup = (%d, %v), want (1, nil)", id, err)
 			}
 			var count int
@@ -433,7 +432,7 @@ func TestSetTokenReusesExistingProfile(t *testing.T) {
 		t.Fatalf("user count=%d err=%v", count, err)
 	}
 	if id, err := a.store.FetchUserID(context.Background(), hashSession(cookie.Value)); err != nil || id != userID {
-		t.Fatalf("profile changed: id=%d err=%v", id, err)
+		t.Fatalf("profile changed: id=%s err=%v", id, err)
 	}
 }
 
@@ -451,18 +450,41 @@ func TestPersonalRoutesRequireSession(t *testing.T) {
 	}
 }
 
+func TestReadHandlerRejectsInvalidUUID(t *testing.T) {
+	for _, id := range []string{"", "1", "-1", "not-a-uuid", uuid.Nil.String()} {
+		t.Run(id, func(t *testing.T) {
+			a := &app{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+			r := httptest.NewRequest(http.MethodPost, "/articles/invalid/read", nil)
+			r.SetPathValue("id", id)
+			r = r.WithContext(context.WithValue(r.Context(), userIDKey{}, testutil.ID(1)))
+			w := httptest.NewRecorder()
+			a.markAsRead(w, r)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
 func TestReadHandlerUsesCookieIdentity(t *testing.T) {
 	a, db := userTestApp(t)
 	ctx := context.Background()
-	for _, userID := range []int64{1, 2} {
+	for _, userID := range []uuid.UUID{testutil.ID(1), testutil.ID(2)} {
 		if err := a.store.InsertSources(ctx, userID, []database.SourcesUpdate{{Name: "Shared", URL: "https://example.com/rss", IsActive: true}}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := a.store.InsertArticles(ctx, []database.Article{{SourceID: sql.NullInt64{Int64: 1, Valid: true}, Title: "Article", URL: "https://example.com/article", BatchDate: time.Now().UTC()}}); err != nil {
+	var sourceID, articleID uuid.UUID
+	if err := db.QueryRow(`SELECT id FROM sources WHERE url = 'https://example.com/rss'`).Scan(&sourceID); err != nil {
 		t.Fatal(err)
 	}
-	r := httptest.NewRequest(http.MethodPost, "/articles/1/read?user_id=2", nil)
+	if err := a.store.InsertArticles(ctx, []database.Article{{SourceID: uuid.NullUUID{UUID: sourceID, Valid: true}, Title: "Article", URL: "https://example.com/article", BatchDate: time.Now().UTC()}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT id FROM articles WHERE url = 'https://example.com/article'`).Scan(&articleID); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/articles/%s/read?user_id=%s", articleID, testutil.ID(2)), nil)
 	r.AddCookie(&http.Cookie{Name: CookieName, Value: "handler-user-1"})
 	w := httptest.NewRecorder()
 	routes(a).ServeHTTP(w, r)
@@ -470,12 +492,12 @@ func TestReadHandlerUsesCookieIdentity(t *testing.T) {
 		t.Fatalf("read status=%d body=%s", w.Code, w.Body.String())
 	}
 	for _, tc := range []struct {
-		userID int64
+		userID uuid.UUID
 		count  int
-	}{{1, 1}, {2, 0}} {
+	}{{testutil.ID(1), 1}, {testutil.ID(2), 0}} {
 		var count int
-		if err := db.QueryRow(`SELECT COUNT(*) FROM user_articles WHERE user_id=? AND read_at IS NOT NULL`, tc.userID).Scan(&count); err != nil || count != tc.count {
-			t.Fatalf("user %d reads=%d err=%v", tc.userID, count, err)
+		if err := db.QueryRow(`SELECT COUNT(*) FROM user_articles WHERE user_id=$1 AND read_at IS NOT NULL`, tc.userID).Scan(&count); err != nil || count != tc.count {
+			t.Fatalf("user %s reads=%d err=%v", tc.userID, count, err)
 		}
 	}
 	r = httptest.NewRequest(http.MethodGet, "/today", nil)

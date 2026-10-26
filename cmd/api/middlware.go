@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func (a *app) logging(next http.Handler) http.Handler {
@@ -64,11 +66,11 @@ func (a *app) requireSession(next http.Handler) http.Handler {
 	})
 }
 
-func requestUserID(w http.ResponseWriter, r *http.Request) (int64, bool) {
-	userID, ok := r.Context().Value(userIDKey{}).(int64)
-	if !ok || userID <= 0 {
+func requestUserID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	userID, ok := r.Context().Value(userIDKey{}).(uuid.UUID)
+	if !ok || userID == uuid.Nil {
 		http.Error(w, "Session required", http.StatusUnauthorized)
-		return 0, false
+		return uuid.Nil, false
 	}
 	return userID, true
 }

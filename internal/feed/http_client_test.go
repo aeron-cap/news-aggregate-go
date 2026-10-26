@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/aeron-cap/news-aggregator/internal/testutil"
 	"io"
 	"net"
 	"net/http"
@@ -383,11 +384,11 @@ func TestFeedClientHTTPSPreservesHostnameAndCertificateChecks(t *testing.T) {
 
 func TestCreateFeedRejectsSavedPrivateSources(t *testing.T) {
 	store, db := feedTestStore(t)
-	if _, err := db.Exec(`UPDATE user_sources SET is_active=0`); err != nil {
+	if _, err := db.Exec(`UPDATE user_sources SET is_active = FALSE`); err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if err := store.InsertSources(ctx, 1, []database.SourcesUpdate{{Name: "Unsafe saved source", URL: "http://169.254.169.254/feed", IsActive: true}}); err != nil {
+	if err := store.InsertSources(ctx, testutil.ID(1), []database.SourcesUpdate{{Name: "Unsafe saved source", URL: "http://169.254.169.254/feed", IsActive: true}}); err != nil {
 		t.Fatal(err)
 	}
 	var count int

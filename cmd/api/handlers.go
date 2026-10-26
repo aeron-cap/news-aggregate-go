@@ -8,13 +8,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/aeron-cap/news-aggregator/internal/database"
 	"github.com/aeron-cap/news-aggregator/internal/feed"
 	"github.com/aeron-cap/news-aggregator/internal/scripts"
+	"github.com/google/uuid"
 )
 
 const CookieName = "news_agg_session"
@@ -138,7 +138,7 @@ func (a *app) buildFeed(w http.ResponseWriter, r *http.Request) {
 }
 
 type articleResponse struct {
-	ID            int64      `json:"id"`
+	ID            uuid.UUID  `json:"id"`
 	Title         string     `json:"title"`
 	Summary       *string    `json:"summary"`
 	Author        *string    `json:"author"`
@@ -189,11 +189,11 @@ func (a *app) markAsRead(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	id, parseErr := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, parseErr := uuid.Parse(r.PathValue("id"))
 
-	if parseErr != nil || id <= 0 {
+	if parseErr != nil || id == uuid.Nil {
 		a.logger.WarnContext(r.Context(), "invalid article id", "id_raw", r.PathValue("id"))
-		respondWithError(w, http.StatusBadRequest, "Invalid article ID", "ID must be a positive integer")
+		respondWithError(w, http.StatusBadRequest, "Invalid article ID", "ID must be a non-zero UUID")
 		return
 	}
 
@@ -214,11 +214,11 @@ func (a *app) markAsRead(w http.ResponseWriter, r *http.Request) {
 }
 
 type interestResponse struct {
-	ID       int64   `json:"id"`
-	Keyword  string  `json:"keyword"`
-	Weight   float64 `json:"weight"`
-	IsMain   bool    `json:"is_main"`
-	IsActive bool    `json:"is_active"`
+	ID       uuid.UUID `json:"id"`
+	Keyword  string    `json:"keyword"`
+	Weight   float64   `json:"weight"`
+	IsMain   bool      `json:"is_main"`
+	IsActive bool      `json:"is_active"`
 }
 
 type interestPayload struct {
@@ -260,7 +260,7 @@ func (a *app) updateInterests(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
 
-	var payload map[int64]interestPayload
+	var payload map[uuid.UUID]interestPayload
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	err := decoder.Decode(&payload)
@@ -280,11 +280,11 @@ func (a *app) updateInterests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updates := make(map[int64]database.InterestUpdate, len(payload))
+	updates := make(map[uuid.UUID]database.InterestUpdate, len(payload))
 	for id, interest := range payload {
-		if id <= 0 {
+		if id == uuid.Nil {
 			a.logger.WarnContext(r.Context(), "invalid interest id", "id", id)
-			respondWithError(w, http.StatusBadRequest, "Invalid interest ID", "IDs must be positive integers")
+			respondWithError(w, http.StatusBadRequest, "Invalid interest ID", "IDs must be non-zero UUIDs")
 			return
 		}
 
@@ -310,16 +310,10 @@ func (a *app) updateInterests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dbPath, err := a.store.DatabasePath(r.Context())
-	if err != nil {
-		a.logger.ErrorContext(r.Context(), "resolve scoring database failed", "err", err)
-		respondWithError(w, http.StatusInternalServerError, "Interests updated, but weight recalculation failed", "Unable to open the scoring database")
-		return
-	}
-	err = scripts.RunResnik(r.Context(), "internal/database/resnik.py", userID, dbPath)
+	err = scripts.RunResnik(r.Context(), "internal/database/resnik.py", userID, a.databaseURL)
 	if err != nil {
 		a.logger.ErrorContext(r.Context(), "run resnik script failed", "err", err)
-		respondWithError(w, http.StatusInternalServerError, "Interests updated, but weight recalculation failed", err.Error())
+		respondWithError(w, http.StatusInternalServerError, "Interests updated, but weight recalculation failed", "Please try again later")
 		return
 	}
 
@@ -329,10 +323,10 @@ func (a *app) updateInterests(w http.ResponseWriter, r *http.Request) {
 }
 
 type sourcesResponse struct {
-	ID       int64  `json:"id"`
-	Name     string `json:"name"`
-	URL      string `json:"url"`
-	IsActive bool   `json:"is_active"`
+	ID       uuid.UUID `json:"id"`
+	Name     string    `json:"name"`
+	URL      string    `json:"url"`
+	IsActive bool      `json:"is_active"`
 }
 
 type sourcesPayload struct {
@@ -443,7 +437,7 @@ func (a *app) updateSources(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
 
-	var payload map[int64]sourcesPayload
+	var payload map[uuid.UUID]sourcesPayload
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	err := decoder.Decode(&payload)
@@ -463,11 +457,11 @@ func (a *app) updateSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updates := make(map[int64]database.SourcesUpdate, len(payload))
+	updates := make(map[uuid.UUID]database.SourcesUpdate, len(payload))
 	for id, source := range payload {
-		if id <= 0 {
+		if id == uuid.Nil {
 			a.logger.WarnContext(r.Context(), "invalid source id", "id", id)
-			respondWithError(w, http.StatusBadRequest, "Invalid source ID", "IDs must be positive integers")
+			respondWithError(w, http.StatusBadRequest, "Invalid source ID", "IDs must be non-zero UUIDs")
 			return
 		}
 

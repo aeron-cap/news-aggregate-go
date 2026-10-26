@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/aeron-cap/news-aggregator/internal/database"
+	"github.com/google/uuid"
 	"github.com/mmcdole/gofeed"
 	"golang.org/x/net/html"
 )
@@ -18,7 +19,7 @@ type Person struct {
 }
 
 type Article struct {
-	SourceID       int64
+	SourceID       uuid.UUID
 	Title          string
 	Summary        string
 	Authors        []Person
@@ -30,20 +31,20 @@ type Article struct {
 }
 
 type rawSource struct {
-	ID  int64
+	ID  uuid.UUID
 	URL string
 }
 
 type rawFeed struct {
-	SourceID int64
+	SourceID uuid.UUID
 	Feed     *gofeed.Feed
 }
 
-func CreateFeed(ctx context.Context, store *database.Store, userID int64) (bool, error) {
+func CreateFeed(ctx context.Context, store *database.Store, userID uuid.UUID) (bool, error) {
 	return createFeed(ctx, store, userID, defaultFeedHTTPClient)
 }
 
-func createFeed(ctx context.Context, store *database.Store, userID int64, client *http.Client) (bool, error) {
+func createFeed(ctx context.Context, store *database.Store, userID uuid.UUID, client *http.Client) (bool, error) {
 	isRefreshNeeded, err := isRefreshNeeded(ctx, store, userID)
 	if err != nil {
 		return false, err
@@ -113,7 +114,7 @@ func createFeed(ctx context.Context, store *database.Store, userID int64, client
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	
+
 	if successfulFeeds == 0 {
 		close(fetchErrors)
 		var failures []error
@@ -133,7 +134,7 @@ func createFeed(ctx context.Context, store *database.Store, userID int64, client
 	return true, nil
 }
 
-func parseSourceFeedToArticle(feed *gofeed.Feed, sourceID int64) ([]Article, error) {
+func parseSourceFeedToArticle(feed *gofeed.Feed, sourceID uuid.UUID) ([]Article, error) {
 	if feed == nil {
 		return nil, fmt.Errorf("feed is nil")
 	}
@@ -218,7 +219,7 @@ func getDate(item *gofeed.Item) string {
 	return time.Now().UTC().Format(time.RFC3339)
 }
 
-func isRefreshNeeded(ctx context.Context, store *database.Store, userID int64) (bool, error) {
+func isRefreshNeeded(ctx context.Context, store *database.Store, userID uuid.UUID) (bool, error) {
 	unread, err := store.CountUnreadArticles(ctx, userID)
 	if err != nil {
 		return false, fmt.Errorf("failed to count unread articles: %w", err)

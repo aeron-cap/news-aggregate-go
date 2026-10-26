@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"sort"
@@ -8,9 +9,10 @@ import (
 	"time"
 
 	"github.com/aeron-cap/news-aggregator/internal/database"
+	"github.com/google/uuid"
 )
 
-func BuildFeed(ctx context.Context, store *database.Store, userID int64, articles []Article) error {
+func BuildFeed(ctx context.Context, store *database.Store, userID uuid.UUID, articles []Article) error {
 	interests, err := store.GetInterests(ctx, userID)
 	if err != nil {
 		return err
@@ -46,7 +48,7 @@ func BuildFeed(ctx context.Context, store *database.Store, userID int64, article
 			author = sql.NullString{String: article.Authors[0].Name, Valid: true}
 		}
 		stored = append(stored, database.Article{
-			SourceID: sql.NullInt64{Int64: article.SourceID, Valid: true},
+			SourceID: uuid.NullUUID{UUID: article.SourceID, Valid: true},
 			Title:    article.Title,
 			Summary:  sql.NullString{String: article.Summary, Valid: article.Summary != ""},
 			Author:   author, URL: article.Link, SourceDate: sourceDate, BatchDate: now,
@@ -59,7 +61,7 @@ func BuildFeed(ctx context.Context, store *database.Store, userID int64, article
 	return err
 }
 
-func GetFeed(ctx context.Context, store *database.Store, userID int64) ([]database.Article, error) {
+func GetFeed(ctx context.Context, store *database.Store, userID uuid.UUID) ([]database.Article, error) {
 	articles, err := store.GetUnreadArticles(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -91,7 +93,7 @@ func GetFeed(ctx context.Context, store *database.Store, userID int64) ([]databa
 		if !articles[i].BatchDate.Equal(articles[j].BatchDate) {
 			return articles[i].BatchDate.After(articles[j].BatchDate)
 		}
-		return articles[i].ID < articles[j].ID
+		return bytes.Compare(articles[i].ID[:], articles[j].ID[:]) < 0
 	})
 	result := []database.Article{}
 	seenURLs, seenAuthors := map[string]bool{}, map[string]bool{}
