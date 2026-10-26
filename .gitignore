@@ -4,3 +4,6 @@ internal/database/news.db-wal
 
 *.exe
 __pycache__/
+.venv/
+.env
+nltk_data/
