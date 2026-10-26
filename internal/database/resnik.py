@@ -1,24 +1,36 @@
 import argparse
 import os
-import sqlite3
-from contextlib import closing
-import nltk
+from pathlib import Path
+from uuid import UUID
+import psycopg
+from dotenv import load_dotenv
+from psycopg.rows import dict_row
+
+DEFAULT_DATABASE_URL = "postgresql://news_aggregator@127.0.0.1:5432/news_aggregator?sslmode=disable"
+NON_MAIN_DECAY = 1.0
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+
+
+def load_environment():
+    # The API supplies these values to its child; direct CLI use reads the same file.
+    load_dotenv(ENV_FILE, override=False, interpolate=False)
+
+
+load_environment()
+# NLTK reads NLTK_DATA during import, so load .env first for direct CLI use.
 from nltk.corpus import wordnet as wn
 from nltk.corpus import wordnet_ic
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
-DB_NAME = os.path.join(script_dir, "news.db")
-NON_MAIN_DECAY = 1.0
 
-nltk.download("wordnet")
-nltk.download("wordnet_ic")
-brown_ic = wordnet_ic.ic("ic-brown.dat")
+def database_url():
+    return os.environ.get("DATABASE_URL") or DEFAULT_DATABASE_URL
 
+def load_information_content():
+    # Corpora are installed during setup, never downloaded during a request.
+    return wordnet_ic.ic("ic-brown.dat")
 
 def fetch_interests(user_id):
-    with closing(sqlite3.connect(DB_NAME)) as conn:
-        conn.row_factory = sqlite3.Row
-
+    with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=5) as conn:
         rows = conn.execute("""
             SELECT
                 i.id,
@@ -31,8 +43,8 @@ def fetch_interests(user_id):
                 ui.is_active
             FROM interests i
             JOIN user_interests ui ON i.id = ui.interest_id
-            WHERE ui.is_active = 1
-            AND ui.user_id = ?
+            WHERE ui.is_active = TRUE
+            AND ui.user_id = %s
         """,
             (user_id,)
         ).fetchall()
@@ -47,6 +59,7 @@ def anchor(kw):
 def calc_weights(interests):
     main_interests = [m for m in interests if m["is_main"] and m["is_active"]]
     main_anchors = {m["keyword"]: anchor(m) for m in main_interests}
+    brown_ic = load_information_content() if main_interests else None
 
     raw = {}
     for kw in interests:
@@ -76,14 +89,14 @@ def calc_weights(interests):
 
 
 def update_weights(user_id, weights):
-    with closing(sqlite3.connect(DB_NAME)) as conn:
-        with conn:
-            conn.executemany("""
+    with psycopg.connect(database_url(), connect_timeout=5) as conn:
+        with conn.cursor() as cursor:
+            cursor.executemany("""
                 UPDATE user_interests
-                SET weight = ?
-                WHERE user_id = ?
+                SET weight = %s
+                WHERE user_id = %s
                     AND interest_id = (
-                        SELECT id FROM interests WHERE keyword = ?
+                        SELECT id FROM interests WHERE keyword = %s
                     )
             """,
                 [(weight, user_id, keyword) for keyword, weight in weights.items()],
@@ -92,13 +105,10 @@ def update_weights(user_id, weights):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Recalculate one reader's interest weights")
-    parser.add_argument("--user-id", type=int, required=True)
-    parser.add_argument("--db", required=True)
+    parser.add_argument("--user-id", type=UUID, required=True)
     args = parser.parse_args(argv)
-    if args.user_id <= 0:
-        parser.error("--user-id must be positive")
-    global DB_NAME
-    DB_NAME = os.path.abspath(args.db)
+    if args.user_id.int == 0:
+        parser.error("--user-id must be a non-zero UUID")
     interests = fetch_interests(args.user_id)
     if not interests:
         return
