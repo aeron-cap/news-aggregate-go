@@ -152,6 +152,26 @@
 .read-link:hover { text-decoration: underline; }
 .read-link span { margin-left: 5px; }
 
+.news-article.is-read h3,
+.news-article.is-read .article-meta,
+.news-article.is-read .article-meta > span,
+.news-article.is-read .article-author,
+.news-article.is-read .read-link {
+  color: #767676;
+}
+
+.article-read-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border: 1px solid #d5d5d0;
+  border-radius: 4px;
+  background: #eeeee9;
+  color: #666;
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .article-actions {
   display: flex;
   flex-wrap: nowrap;

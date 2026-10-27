@@ -8,6 +8,7 @@ interface Article {
   url: string
   source_date: string | null
   source_name: string | null
+  isRead?: boolean
 }
 
 function articleLink(url: string) {
@@ -35,15 +36,16 @@ function ArticleCard({ article, onRead }: { article: Article; onRead: (id: strin
   const date = articleDate(article.source_date)
 
   function openArticle() {
-    setShowReadPrompt(true)
+    if (!article.isRead) setShowReadPrompt(true)
   }
 
   async function confirmRead() {
-    if (markingRead) return
+    if (markingRead || article.isRead) return
     setMarkingRead(true)
     setReadError(null)
     try {
       await onRead(article.id)
+      setShowReadPrompt(false)
     } catch (err) {
       setReadError(err instanceof Error ? err.message : 'Could not mark article as read')
     } finally {
@@ -57,7 +59,7 @@ function ArticleCard({ article, onRead }: { article: Article; onRead: (id: strin
   }
 
   return (
-    <article className="news-article" aria-busy={markingRead}>
+    <article className={`news-article${article.isRead ? ' is-read' : ''}`} aria-busy={markingRead}>
       <div className="article-meta">
         <span>{article.source_name || 'From the wire'}</span>
         {date && <time dateTime={article.source_date!}>{date}</time>}
@@ -79,37 +81,41 @@ function ArticleCard({ article, onRead }: { article: Article; onRead: (id: strin
         {article.author && <span className="article-author">By {article.author}</span>}
         {href && (
           <div className="article-actions">
-            <div
-              className="article-read-prompt"
-              role="group"
-              aria-label={`Did you read ${article.title}?`}
-              aria-hidden={!showReadPrompt}
-              style={{ visibility: showReadPrompt ? 'visible' : 'hidden' }}
-            >
-              <span className="article-read-question" aria-live="polite">
-                {markingRead ? 'Saving…' : 'Did you read it?'}
-              </span>
-              <button
-                className="article-read-choice is-confirm"
-                type="button"
-                aria-label={`Yes, mark ${article.title} as read`}
-                title="Yes, mark as read"
-                disabled={!showReadPrompt || markingRead}
-                onClick={() => void confirmRead()}
+            {article.isRead ? (
+              <span className="article-read-badge" role="status">Read</span>
+            ) : (
+              <div
+                className="article-read-prompt"
+                role="group"
+                aria-label={`Did you read ${article.title}?`}
+                aria-hidden={!showReadPrompt}
+                style={{ visibility: showReadPrompt ? 'visible' : 'hidden' }}
               >
-                <span aria-hidden="true">✓</span>
-              </button>
-              <button
-                className="article-read-choice"
-                type="button"
-                aria-label={`No, keep ${article.title} unread`}
-                title="No, keep unread"
-                disabled={!showReadPrompt || markingRead}
-                onClick={keepUnread}
-              >
-                <span aria-hidden="true">×</span>
-              </button>
-            </div>
+                <span className="article-read-question" aria-live="polite">
+                  {markingRead ? 'Saving…' : 'Did you read it?'}
+                </span>
+                <button
+                  className="article-read-choice is-confirm"
+                  type="button"
+                  aria-label={`Yes, mark ${article.title} as read`}
+                  title="Yes, mark as read"
+                  disabled={!showReadPrompt || markingRead}
+                  onClick={() => void confirmRead()}
+                >
+                  <span aria-hidden="true">✓</span>
+                </button>
+                <button
+                  className="article-read-choice"
+                  type="button"
+                  aria-label={`No, keep ${article.title} unread`}
+                  title="No, keep unread"
+                  disabled={!showReadPrompt || markingRead}
+                  onClick={keepUnread}
+                >
+                  <span aria-hidden="true">×</span>
+                </button>
+              </div>
+            )}
             <a
               className="read-link"
               href={href}
@@ -163,7 +169,9 @@ function NewsPaper() {
     setPendingReads((count) => count + 1)
     try {
       await markArticleAsRead(id)
-      setArticles((current) => current.filter((article) => article.id !== id))
+      setArticles((current) => current.map((article) => (
+        article.id === id ? { ...article, isRead: true } : article
+      )))
     } finally {
       setPendingReads((count) => count - 1)
     }
