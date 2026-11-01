@@ -154,7 +154,7 @@ function Interests() {
       ) : error ? (
         <div className="feed-message" role="alert">
           <h3>Your interests couldn’t make it here.</h3>
-          <p>{error}. Check that the API is running at localhost:6767, then try again.</p>
+          <p>{error}. Check that the API server is running, then try again.</p>
           <button className="refresh-button" type="button" onClick={() => setRefresh((value) => value + 1)}>
             Try again
           </button>

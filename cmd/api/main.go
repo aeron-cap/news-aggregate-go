@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 	"net"
@@ -40,6 +41,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	addr := cmp.Or(os.Getenv("ADDR"), "127.0.0.1:6767")
+	if _, _, err := net.SplitHostPort(addr); err != nil {
+		logger.Error("Invalid ADDR, expected host:port", "addr", addr, "err", err)
+		os.Exit(1)
+	}
+
 	databaseURL := database.ConnectionURL()
 	db, err := database.Open(sigCtx, databaseURL)
 	if err != nil {
@@ -59,7 +66,7 @@ func main() {
 	ongoingCtx, stopOngoingGracefully := context.WithCancel(sigCtx)
 
 	srv := &http.Server{
-		Addr:         ":6767",
+		Addr:         addr,
 		Handler:      mux,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 40 * time.Second,
@@ -70,7 +77,7 @@ func main() {
 	}
 
 	go func() {
-		logger.Info("Starting server on :6767")
+		logger.Info("Starting server", "addr", addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			panic(err)
 		}
