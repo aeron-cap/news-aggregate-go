@@ -1,4 +1,4 @@
-# <NAME_HERE> (i dont have a name for it yet) is a link aggregator for tech news.
+# Pocket News is a link aggregator for tech news.
 
 > This is a very early stage project, I still need to ask permission for some of the sources I want to fetch, and I need to add more features to make it more useful and reliable.
 
@@ -19,8 +19,5 @@ maintained against the [IANA IPv4](https://www.iana.org/assignments/iana-ipv4-sp
 and [IPv6](https://www.iana.org/assignments/iana-ipv6-special-registry/) registries.
 
 Rough roadmap:
-- [x] Frontend
-- [x] Tests
 - [ ] Add more sources
-- [ ] Improve NLP scoring
-- [x] Attach preferences to cookies
+- [ ] Improve NLP scoring after some initial use
