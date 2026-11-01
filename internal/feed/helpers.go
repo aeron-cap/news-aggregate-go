@@ -47,7 +47,7 @@ func sortByWeightedScore(by string, articles []Article) []Article {
 
 func giveTopArticles(num int, articles []Article) []Article {
 	articles = sortByWeightedScore("desc", articles)
-	
+
 	if num > len(articles) {
 		return articles
 	}
@@ -55,7 +55,7 @@ func giveTopArticles(num int, articles []Article) []Article {
 	return articles[:num]
 }
 
-func filterOldArticles(articles []Article, years, month, days int ) []Article {
+func filterOldArticles(articles []Article, years, month, days int) []Article {
 	cutoff := time.Now().AddDate(-years, -month, -days)
 	filtered := []Article{}
 	for _, article := range articles {

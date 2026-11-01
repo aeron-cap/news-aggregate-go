@@ -42,24 +42,24 @@ func ValidateFeedURL(u *url.URL) error {
 	if u == nil {
 		return errors.New("feed URL is required")
 	}
-	
+
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return errors.New("feed URL must use http or https scheme")
 	}
-	
+
 	hostname := u.Hostname()
 	if hostname == "" || u.Opaque != "" {
 		return errors.New("feed URL must have a valid hostname")
 	}
-	
+
 	if u.User != nil {
 		return errors.New("feed URL must not contain user info")
 	}
-	
+
 	if strings.Contains(hostname, "%") {
 		return errors.New("feed URL must not contain an IPv6 zone")
 	}
-	
+
 	port := u.Port()
 	if port != "" {
 		expectedPort := "80"
@@ -70,11 +70,11 @@ func ValidateFeedURL(u *url.URL) error {
 			return errors.New("feed URL must not contain a non-default port")
 		}
 	}
-	
+
 	if ip, err := netip.ParseAddr(hostname); err == nil && !isAllowedFeedIP(ip) {
 		return ErrBlockedFeedAddress
 	}
-	
+
 	return nil
 }
 
@@ -82,16 +82,16 @@ func isAllowedFeedIP(ip netip.Addr) bool {
 	if !ip.IsValid() || ip.Zone() != "" {
 		return false
 	}
-	
+
 	ip = ip.Unmap()
 	if !ip.IsGlobalUnicast() || ip.IsPrivate() {
 		return false
 	}
-	
+
 	if ip.Is6() && !feedIPv6Range.Contains(ip) {
 		return false
 	}
-	
+
 	for _, prefix := range blockedFeedRanges {
 		if prefix.Contains(ip) {
 			return false
@@ -109,7 +109,7 @@ func (d publicFeedDialer) DialContext(ctx context.Context, network, address stri
 	if network != "tcp" && network != "tcp4" && network != "tcp6" {
 		return nil, errors.New("feed connections must use TCP")
 	}
-	
+
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
 		return nil, fmt.Errorf("invalid feed destination: %w", err)
@@ -126,7 +126,7 @@ func (d publicFeedDialer) DialContext(ctx context.Context, network, address stri
 	if err != nil {
 		return nil, fmt.Errorf("resolve feed hostname: %w", err)
 	}
-	
+
 	if len(ips) == 0 {
 		return nil, errors.New("feed hostname has no addresses")
 	}
@@ -136,22 +136,22 @@ func (d publicFeedDialer) DialContext(ctx context.Context, network, address stri
 			return nil, ErrBlockedFeedAddress
 		}
 	}
-	
+
 	var failures []error
 	for _, ip := range ips {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		
+
 		target := net.JoinHostPort(ip.Unmap().String(), port)
 		conn, err := d.dial(ctx, network, target)
 		if err == nil {
 			return conn, nil
 		}
-		
+
 		failures = append(failures, err)
 	}
-	
+
 	return nil, fmt.Errorf("connect to feed: %w", errors.Join(failures...))
 }
 
