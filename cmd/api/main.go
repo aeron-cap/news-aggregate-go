@@ -61,6 +61,8 @@ func main() {
 		databaseURL: databaseURL,
 	}
 
+	go app.cleanupExpiredSessions(sigCtx, _sessionCleanupInterval)
+
 	mux := routes(app)
 
 	ongoingCtx, stopOngoingGracefully := context.WithCancel(sigCtx)

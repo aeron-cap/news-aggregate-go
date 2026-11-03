@@ -60,6 +60,16 @@ func (s *Store) UpdateToken(ctx context.Context, oldTokenHash, newTokenHash stri
 	return requireAffected(result, "valid session")
 }
 
+// DeleteExpiredSessions removes users whose session expired at or before now.
+// Their user_sources, user_interests, and user_articles rows are removed by ON DELETE CASCADE.
+func (s *Store) DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE expires_at <= $1`, now.UTC())
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 func requireAffected(result sql.Result, entity string) error {
 	count, err := result.RowsAffected()
 	if err != nil {
