@@ -19,6 +19,9 @@ import (
 
 const CookieName = "news_agg_session"
 
+// tryAgainLater replaces internal error text in 5xx responses. The full error is logged instead.
+const tryAgainLater = "Please try again later"
+
 func health(w http.ResponseWriter, r *http.Request) {
 
 	if isShuttingDown.Load() {
@@ -38,7 +41,7 @@ func (a *app) setToken(w http.ResponseWriter, r *http.Request) {
 			return
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			a.logger.ErrorContext(r.Context(), "session lookup failed", "err", err)
-			respondWithError(w, http.StatusInternalServerError, "Failed to load session", "Please try again later")
+			respondWithError(w, http.StatusInternalServerError, "Failed to load session", tryAgainLater)
 			return
 		}
 	}
@@ -48,7 +51,7 @@ func (a *app) setToken(w http.ResponseWriter, r *http.Request) {
 	err := a.store.CreateAnonymousSession(r.Context(), tokenHash, expiresAt)
 	if err != nil {
 		a.logger.ErrorContext(r.Context(), "saving cookie failed", "err", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to set cookie", err.Error())
+		respondWithError(w, http.StatusInternalServerError, "Failed to set cookie", tryAgainLater)
 		return
 	}
 
@@ -89,7 +92,7 @@ func (a *app) updateToken(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		a.logger.ErrorContext(r.Context(), "update session token failed", "err", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to update session token", "Please try again later")
+		respondWithError(w, http.StatusInternalServerError, "Failed to update session token", tryAgainLater)
 		return
 	}
 
@@ -120,7 +123,7 @@ func (a *app) buildFeed(w http.ResponseWriter, r *http.Request) {
 	refreshed, err := feed.CreateFeed(ctx, a.store, userID)
 	if err != nil {
 		a.logger.ErrorContext(ctx, "build feed failed", "err", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to build feed", err.Error())
+		respondWithError(w, http.StatusInternalServerError, "Failed to build feed", tryAgainLater)
 		return
 	}
 
@@ -157,7 +160,7 @@ func (a *app) fetchFeed(w http.ResponseWriter, r *http.Request) {
 	articles, err := feed.GetFeed(r.Context(), a.store, userID)
 	if err != nil {
 		a.logger.ErrorContext(r.Context(), "fetch unread articles failed", "err", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to fetch unread articles", err.Error())
+		respondWithError(w, http.StatusInternalServerError, "Failed to fetch unread articles", tryAgainLater)
 		return
 	}
 
@@ -204,7 +207,7 @@ func (a *app) markAsRead(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		a.logger.ErrorContext(r.Context(), "mark article as read failed", "id", id, "err", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to mark article as read", err.Error())
+		respondWithError(w, http.StatusInternalServerError, "Failed to mark article as read", tryAgainLater)
 		return
 	}
 
@@ -235,7 +238,7 @@ func (a *app) fetchInterests(w http.ResponseWriter, r *http.Request) {
 	interests, err := a.store.GetInterests(r.Context(), userID)
 	if err != nil {
 		a.logger.ErrorContext(r.Context(), "fetch interests failed", "err", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to fetch interests", err.Error())
+		respondWithError(w, http.StatusInternalServerError, "Failed to fetch interests", tryAgainLater)
 		return
 	}
 
@@ -302,18 +305,18 @@ func (a *app) updateInterests(w http.ResponseWriter, r *http.Request) {
 	err = a.store.UpdateInterests(r.Context(), userID, updates)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			respondWithError(w, http.StatusNotFound, "Interest not found", err.Error())
+			respondWithError(w, http.StatusNotFound, "Interest not found", "One or more interests do not exist")
 			return
 		}
 		a.logger.ErrorContext(r.Context(), "update interests failed", "err", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to update interests", err.Error())
+		respondWithError(w, http.StatusInternalServerError, "Failed to update interests", tryAgainLater)
 		return
 	}
 
 	err = scripts.RunResnik(r.Context(), "internal/database/resnik.py", userID, a.databaseURL)
 	if err != nil {
 		a.logger.ErrorContext(r.Context(), "run resnik script failed", "err", err)
-		respondWithError(w, http.StatusInternalServerError, "Interests updated, but weight recalculation failed", "Please try again later")
+		respondWithError(w, http.StatusInternalServerError, "Interests updated, but weight recalculation failed", tryAgainLater)
 		return
 	}
 
@@ -363,7 +366,7 @@ func (a *app) fetchSources(w http.ResponseWriter, r *http.Request) {
 	sources, err := a.store.GetAllSources(r.Context(), userID)
 	if err != nil {
 		a.logger.ErrorContext(r.Context(), "fetch sources failed", "err", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to fetch sources", err.Error())
+		respondWithError(w, http.StatusInternalServerError, "Failed to fetch sources", tryAgainLater)
 		return
 	}
 
@@ -420,8 +423,12 @@ func (a *app) insertSources(w http.ResponseWriter, r *http.Request) {
 
 	err = a.store.InsertSources(r.Context(), userID, updates)
 	if err != nil {
+		if errors.Is(err, database.ErrDuplicateSourceURL) {
+			respondWithError(w, http.StatusBadRequest, "Invalid request payload", database.ErrDuplicateSourceURL.Error())
+			return
+		}
 		a.logger.ErrorContext(r.Context(), "insert sources failed", "err", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to insert sources", err.Error())
+		respondWithError(w, http.StatusInternalServerError, "Failed to insert sources", tryAgainLater)
 		return
 	}
 
@@ -476,16 +483,20 @@ func (a *app) updateSources(w http.ResponseWriter, r *http.Request) {
 
 	err = a.store.UpdateSources(r.Context(), userID, updates)
 	if err != nil {
+		if errors.Is(err, database.ErrDuplicateSourceURL) {
+			respondWithError(w, http.StatusBadRequest, "Invalid request payload", database.ErrDuplicateSourceURL.Error())
+			return
+		}
 		if errors.Is(err, database.ErrSharedSourceName) {
-			respondWithError(w, http.StatusConflict, "Cannot rename shared source", err.Error())
+			respondWithError(w, http.StatusConflict, "Cannot rename shared source", database.ErrSharedSourceName.Error())
 			return
 		}
 		if errors.Is(err, sql.ErrNoRows) {
-			respondWithError(w, http.StatusNotFound, "Source not found", err.Error())
+			respondWithError(w, http.StatusNotFound, "Source not found", "One or more sources do not exist")
 			return
 		}
 		a.logger.ErrorContext(r.Context(), "update sources failed", "err", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to update sources", err.Error())
+		respondWithError(w, http.StatusInternalServerError, "Failed to update sources", tryAgainLater)
 		return
 	}
 

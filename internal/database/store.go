@@ -15,7 +15,10 @@ type Store struct{ db *sql.DB }
 
 func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 
-var ErrSharedSourceName = errors.New("shared source names cannot be changed; use a different feed URL")
+var (
+	ErrSharedSourceName   = errors.New("shared source names cannot be changed; use a different feed URL")
+	ErrDuplicateSourceURL = errors.New("each feed URL can only appear once per request")
+)
 
 func (s *Store) CreateAnonymousSession(ctx context.Context, tokenHash string, expiresAt time.Time) error {
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -136,7 +139,7 @@ func (s *Store) InsertSources(ctx context.Context, userID uuid.UUID, sources []S
 	for _, source := range sources {
 		source.Name, source.URL = strings.TrimSpace(source.Name), strings.TrimSpace(source.URL)
 		if seen[source.URL] {
-			return fmt.Errorf("duplicate feed URL in source batch")
+			return ErrDuplicateSourceURL
 		}
 		seen[source.URL] = true
 		sourceID, err := sourceForURL(ctx, tx, source)
@@ -166,7 +169,7 @@ func (s *Store) UpdateSources(ctx context.Context, userID uuid.UUID, updates map
 	for id, update := range updates {
 		update.Name, update.URL = strings.TrimSpace(update.Name), strings.TrimSpace(update.URL)
 		if seen[update.URL] {
-			return fmt.Errorf("duplicate feed URL in source batch")
+			return ErrDuplicateSourceURL
 		}
 		seen[update.URL] = true
 		var name, url string
