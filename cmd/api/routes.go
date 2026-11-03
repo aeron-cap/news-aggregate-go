@@ -20,5 +20,6 @@ func routes(app *app) http.Handler {
 	mux.Handle("POST /sources", app.requireSession(http.HandlerFunc(app.insertSources)))
 	mux.Handle("POST /change-sources", app.requireSession(http.HandlerFunc(app.updateSources)))
 
-	return app.cors(app.logging(http.NewCrossOriginProtection().Handler(mux)))
+	// No CORS headers: nginx serves the frontend and API from one origin.
+	return app.logging(http.NewCrossOriginProtection().Handler(mux))
 }
