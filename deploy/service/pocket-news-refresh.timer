@@ -1,0 +1,13 @@
+[Unit]
+Description=Refresh Pocket News feeds once a day
+
+[Timer]
+# Daily at 06:00 server local time.
+OnCalendar=*-*-* 06:00:00
+# If the server was off at 06:00, run once as soon as it's back up.
+Persistent=true
+RandomizedDelaySec=2min
+# systemd never starts the oneshot service again while a run is still active, so runs can't overlap.
+
+[Install]
+WantedBy=timers.target

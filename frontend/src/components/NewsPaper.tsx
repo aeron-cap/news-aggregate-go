@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchToday, markArticleAsRead } from '../../api'
+import { buildFeed, fetchToday, markArticleAsRead } from '../../api'
 
 interface Article {
   id: string
@@ -141,6 +141,7 @@ function NewsPaper() {
   const [error, setError] = useState<string | null>(null)
   const [edition, setEdition] = useState(0)
   const [pendingReads, setPendingReads] = useState(0)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -148,7 +149,16 @@ function NewsPaper() {
     async function loadArticles() {
       setLoading(true)
       setError(null)
+      setRefreshError(null)
       try {
+        // The first load only reads saved articles. Refresh also fetches new ones first.
+        if (edition > 0) {
+          try {
+            await buildFeed()
+          } catch (err) {
+            if (active) setRefreshError(err instanceof Error ? err.message : 'Could not refresh feed')
+          }
+        }
         const data = await fetchToday()
         if (!Array.isArray(data)) throw new Error('Unexpected article response')
         if (active) setArticles(data)
@@ -192,9 +202,12 @@ function NewsPaper() {
             disabled={loading || pendingReads > 0}
             onClick={() => setEdition((value) => value + 1)}
           >
-            {loading ? 'Loading…' : 'Refresh'}
+            {loading ? (edition > 0 ? 'Refreshing…' : 'Loading…') : 'Refresh'}
           </button>
         </div>
+        {refreshError && !loading && !error && (
+          <p className="feed-refresh-error" role="status">{refreshError}. Showing your saved stories.</p>
+        )}
 
         {loading ? (
           <div className="newspaper-content" aria-hidden="true">

@@ -1,0 +1,12 @@
+[Unit]
+Description=Pocket News feed refresh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pocketnews
+Group=pocketnews
+WorkingDirectory=/opt/pocket-news/current
+ExecStart=/opt/pocket-news/current/refresh
+TimeoutStartSec=30min

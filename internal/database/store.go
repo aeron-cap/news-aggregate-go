@@ -48,6 +48,24 @@ func (s *Store) FetchUserID(ctx context.Context, tokenHash string) (uuid.UUID, e
 	return userID, nil
 }
 
+// ListActiveUserIDs returns the users whose session has not expired at now.
+func (s *Store) ListActiveUserIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM users WHERE expires_at > $1 ORDER BY created_at, id`, now.UTC())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	userIDs := []uuid.UUID{}
+	for rows.Next() {
+		var userID uuid.UUID
+		if err := rows.Scan(&userID); err != nil {
+			return nil, err
+		}
+		userIDs = append(userIDs, userID)
+	}
+	return userIDs, rows.Err()
+}
+
 func (s *Store) UpdateToken(ctx context.Context, oldTokenHash, newTokenHash string, expiresAt time.Time) error {
 	now := time.Now().UTC()
 	if !expiresAt.After(now) {

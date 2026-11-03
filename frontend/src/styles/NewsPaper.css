@@ -201,6 +201,7 @@
 .article-read-choice:hover:not(:disabled) { background: #eeefe7; border-color: #506456; }
 .article-read-choice:disabled { opacity: .55; cursor: wait; }
 .article-read-error { margin: 8px 0 0; color: #963c32; font-size: 12px; line-height: 1.5; }
+.feed-refresh-error { margin: -18px 0 24px; color: #963c32; font-size: 13px; line-height: 1.5; }
 
 .feed-message {
   border-block: 1px solid #deddd5;
