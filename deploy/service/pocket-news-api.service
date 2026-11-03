@@ -8,8 +8,8 @@ User=pocketnews
 Group=pocketnews
 WorkingDirectory=/opt/pocket-news/current
 ExecStart=/opt/pocket-news/current/api
-Environment=PYTHON_BIN=/opt/pocket-news/.venv/bin/python
-Environment=NLTK_DATA=/opt/pocket-news/nltk_data
+Environment=PYTHON_BIN=/opt/pocket-news/shared/.venv/bin/python
+Environment=NLTK_DATA=/opt/pocket-news/shared/nltk_data
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30
