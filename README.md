@@ -18,6 +18,10 @@ The conservative address policy in `internal/feed/http_client.go` should be
 maintained against the [IANA IPv4](https://www.iana.org/assignments/iana-ipv4-special-registry/)
 and [IPv6](https://www.iana.org/assignments/iana-ipv6-special-registry/) registries.
 
+## Deployment
+
+See [docs/deployment.md](docs/deployment.md) for the EC2 setup: server layout, environment variables, NLTK corpora, nginx and systemd, and the one-time UUID migration for older databases.
+
 Rough roadmap:
 - [ ] Add more sources
 - [ ] Improve NLP scoring after some initial use
