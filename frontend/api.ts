@@ -45,6 +45,18 @@ export async function fetchToday() {
   return response.json();
 }
 
+export async function buildFeed() {
+  const response = await fetchWithSession("/build-feed");
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(
+      typeof payload?.error === "string"
+        ? payload.error
+        : "Could not refresh feed",
+    );
+  }
+}
+
 export async function markArticleAsRead(id: string) {
   const response = await fetchWithSession(`/articles/${id}/read`, {
     method: "POST",

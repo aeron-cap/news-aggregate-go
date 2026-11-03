@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh Pocket News feeds every 30 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=30min
+RandomizedDelaySec=2min
+# systemd never starts the oneshot service again while a run is still active, so runs can't overlap.
+
+[Install]
+WantedBy=timers.target
