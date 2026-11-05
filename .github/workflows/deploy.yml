@@ -12,6 +12,7 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   deploy:
@@ -29,27 +30,32 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 24.21.0
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+
       - name: Build Go binaries
         env:
           CGO_ENABLED: "0"
           GOOS: linux
           GOARCH: ${{ vars.DEPLOY_GOARCH || 'amd64' }}
         run: go build -trimpath -o release/ ./cmd/...
+
       - name: Build frontend
         working-directory: frontend
         run: |
           npm ci
           npm run build
+
       - name: Package release
         run: |
           mkdir -p release/frontend release/internal/database
@@ -57,6 +63,18 @@ jobs:
           cp internal/database/resnik.py release/internal/database/
           cp requirements.txt release/
           tar -czf "$TARBALL" -C release .
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.DEPLOY_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.DEPLOY_AWS_REGION || 'ap-southeast-1' }}
+
+      - name: Install Session Manager plugin
+        run: |
+          curl -fsSLo /tmp/smp.deb https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb
+          sudo dpkg -i /tmp/smp.deb
+
       - name: Configure SSH
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -66,7 +84,13 @@ jobs:
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<'EOF'
+          Host i-*
+            ProxyCommand aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters portNumber=%p
+          EOF
+
       - name: Upload release
         run: scp -i ~/.ssh/deploy_key "$TARBALL" "$DEPLOY_USER@$DEPLOY_HOST:"
+
       - name: Activate release
         run: ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" bash -s -- "$SHA" < deploy/scripts/deploy-release.sh
