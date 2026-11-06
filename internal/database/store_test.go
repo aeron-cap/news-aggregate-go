@@ -10,14 +10,15 @@ import (
 	"time"
 
 	"github.com/aeron-cap/news-aggregator/internal/testutil"
+	"github.com/aeron-cap/news-aggregator/migrations"
 	"github.com/google/uuid"
 )
 
 func schemaTestStore(t *testing.T) (*Store, *sql.DB) {
 	t.Helper()
 	db, _ := testutil.Postgres(t)
-	if _, err := db.Exec(schemaSQL); err != nil {
-		t.Fatalf("load schema.sql: %v", err)
+	if _, err := db.Exec(migrations.InitialSchema); err != nil {
+		t.Fatalf("load initial schema: %v", err)
 	}
 	return NewStore(db), db
 }
@@ -505,7 +506,7 @@ func TestOpenRejectsLegacySchemaWithoutDeletingData(t *testing.T) {
 	if opened, err := Open(context.Background(), databaseURL); err == nil {
 		opened.Close()
 		t.Fatal("legacy schema opened without migration")
-	} else if !strings.Contains(err.Error(), "001_uuid_ids.sql") {
+	} else if !strings.Contains(err.Error(), "must be UUID") {
 		t.Fatalf("unexpected schema error: %v", err)
 	}
 	var id int64

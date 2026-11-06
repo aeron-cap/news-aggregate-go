@@ -23,13 +23,13 @@ import (
 
 func schemaTestApp(t *testing.T) (*app, *sql.DB) {
 	t.Helper()
-	schema, err := os.ReadFile(filepath.Join("..", "..", "internal", "database", "schema.sql"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "migrations", "001_initial_schema.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	db, databaseURL := testutil.Postgres(t)
 	if _, err := db.Exec(string(schema)); err != nil {
-		t.Fatalf("load schema.sql: %v", err)
+		t.Fatalf("load initial schema: %v", err)
 	}
 	return &app{
 		store:       database.NewStore(db),

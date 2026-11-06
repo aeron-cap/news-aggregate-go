@@ -113,12 +113,12 @@ func TestRunStopsWhenCancelled(t *testing.T) {
 
 func TestRunRefreshesOnlyActiveUsers(t *testing.T) {
 	db, _ := testutil.Postgres(t)
-	schema, err := os.ReadFile(filepath.Join("..", "..", "internal", "database", "schema.sql"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "migrations", "001_initial_schema.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(string(schema)); err != nil {
-		t.Fatalf("load schema.sql: %v", err)
+		t.Fatalf("load initial schema: %v", err)
 	}
 	now := time.Now().UTC()
 	if _, err := db.Exec(`INSERT INTO users (id, token, expires_at) VALUES ($1, 'active', $2), ($3, 'expired', $4)`,
