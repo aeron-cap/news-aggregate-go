@@ -116,7 +116,7 @@ class UserInterestsTests(ResnikTestCase):
         self.addCleanup(environment.stop)
 
         with psycopg.connect(self.database_url) as conn:
-            conn.execute(pathlib.Path(__file__).with_name("schema.sql").read_text())
+            conn.execute((pathlib.Path(__file__).resolve().parents[2] / "migrations" / "001_initial_schema.sql").read_text())
             with conn.cursor() as cursor:
                 cursor.executemany(
                     "INSERT INTO users (id, token, expires_at) VALUES (%s, %s, CURRENT_TIMESTAMP + INTERVAL '1 day')",

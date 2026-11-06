@@ -9,12 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aeron-cap/news-aggregator/migrations"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 )
-
-//go:embed schema.sql
-var schemaSQL string
 
 //go:embed seed.sql
 var seed string
@@ -60,7 +58,7 @@ func Open(ctx context.Context, databaseURL string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, schemaSQL); err != nil {
+	if _, err := tx.ExecContext(ctx, migrations.InitialSchema); err != nil {
 		tx.Rollback()
 		db.Close()
 		return nil, fmt.Errorf("failed to execute schema SQL: %w", err)
@@ -97,7 +95,7 @@ func validateExistingIDTypes(ctx context.Context, tx *sql.Tx) error {
 	if err != nil {
 		return err
 	}
-	return fmt.Errorf("database column %s.%s must be UUID; run migrations/001_uuid_ids.sql before starting", table, column)
+	return fmt.Errorf("database column %s.%s must be UUID; integer-key databases are no longer supported, so start from a fresh database", table, column)
 }
 
 func validateSchema(ctx context.Context, tx *sql.Tx) error {
@@ -119,7 +117,7 @@ func validateSchema(ctx context.Context, tx *sql.Tx) error {
 				return fmt.Errorf("database table %s is missing column %s; migrate the existing database before starting", table, column)
 			}
 			if (column == "id" || strings.HasSuffix(column, "_id")) && columns[column] != "uuid" {
-				return fmt.Errorf("database column %s.%s must be UUID; run migrations/001_uuid_ids.sql before starting", table, column)
+				return fmt.Errorf("database column %s.%s must be UUID; integer-key databases are no longer supported, so start from a fresh database", table, column)
 			}
 		}
 	}

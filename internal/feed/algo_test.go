@@ -35,7 +35,7 @@ func TestRelevanceOnlyUsesActiveInterests(t *testing.T) {
 
 func feedTestStore(t *testing.T) (*database.Store, *sql.DB) {
 	t.Helper()
-	schema, err := os.ReadFile(filepath.Join("..", "database", "schema.sql"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "migrations", "001_initial_schema.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
