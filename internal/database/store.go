@@ -40,15 +40,20 @@ func (s *Store) CreateAnonymousSession(ctx context.Context, tokenHash string, ex
 }
 
 func (s *Store) FetchUserID(ctx context.Context, tokenHash string) (uuid.UUID, error) {
-	var userID uuid.UUID
-	err := s.db.QueryRowContext(ctx, `SELECT id FROM users WHERE token = $1 AND expires_at > $2`, tokenHash, time.Now().UTC()).Scan(&userID)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("find session: %w", err)
-	}
-	return userID, nil
+	userID, _, err := s.FetchSession(ctx, tokenHash)
+	return userID, err
 }
 
-// ListActiveUserIDs returns the users whose session has not expired at now.
+func (s *Store) FetchSession(ctx context.Context, tokenHash string) (uuid.UUID, time.Time, error) {
+	var userID uuid.UUID
+	var expiresAt time.Time
+	err := s.db.QueryRowContext(ctx, `SELECT id, expires_at FROM users WHERE token = $1 AND expires_at > $2`, tokenHash, time.Now().UTC()).Scan(&userID, &expiresAt)
+	if err != nil {
+		return uuid.Nil, time.Time{}, fmt.Errorf("find session: %w", err)
+	}
+	return userID, expiresAt, nil
+}
+
 func (s *Store) ListActiveUserIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id FROM users WHERE expires_at > $1 ORDER BY created_at, id`, now.UTC())
 	if err != nil {
@@ -66,20 +71,19 @@ func (s *Store) ListActiveUserIDs(ctx context.Context, now time.Time) ([]uuid.UU
 	return userIDs, rows.Err()
 }
 
-func (s *Store) UpdateToken(ctx context.Context, oldTokenHash, newTokenHash string, expiresAt time.Time) error {
-	now := time.Now().UTC()
-	if !expiresAt.After(now) {
-		return fmt.Errorf("session expiry must be in the future")
-	}
-	result, err := s.db.ExecContext(ctx, `UPDATE users SET token = $1, expires_at = $2 WHERE token = $3 AND expires_at > $4`, newTokenHash, expiresAt.UTC(), oldTokenHash, now)
+func (s *Store) ExtendSession(ctx context.Context, tokenHash string, expiresAt, refreshBefore time.Time) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `UPDATE users SET expires_at = $2 WHERE token = $1 AND expires_at > $3 AND expires_at < $4`,
+		tokenHash, expiresAt.UTC(), time.Now().UTC(), refreshBefore.UTC())
 	if err != nil {
-		return err
+		return false, err
 	}
-	return requireAffected(result, "valid session")
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
 }
 
-// DeleteExpiredSessions removes users whose session expired at or before now.
-// Their user_sources, user_interests, and user_articles rows are removed by ON DELETE CASCADE.
 func (s *Store) DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error) {
 	result, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE expires_at <= $1`, now.UTC())
 	if err != nil {

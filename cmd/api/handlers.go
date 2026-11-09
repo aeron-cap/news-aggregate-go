@@ -19,6 +19,11 @@ import (
 
 const CookieName = "news_agg_session"
 
+const (
+	sessionTTL             = 15 * 24 * time.Hour
+	sessionRefreshInterval = 24 * time.Hour
+)
+
 // tryAgainLater replaces internal error text in 5xx responses. The full error is logged instead.
 const tryAgainLater = "Please try again later"
 
@@ -35,7 +40,8 @@ func health(w http.ResponseWriter, r *http.Request) {
 
 func (a *app) setToken(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(CookieName); err == nil {
-		if _, err := a.store.FetchUserID(r.Context(), hashSession(cookie.Value)); err == nil {
+		if _, expiresAt, err := a.store.FetchSession(r.Context(), hashSession(cookie.Value)); err == nil {
+			a.extendSession(w, r, cookie.Value, expiresAt)
 			w.Header().Set("Cache-Control", "no-store")
 			respondWithJSON(w, http.StatusOK, map[string]string{"details": "Session already exists"})
 			return
@@ -46,7 +52,7 @@ func (a *app) setToken(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	token, tokenHash := newSessionToken()
-	expiresAt := time.Now().UTC().Add(15 * 24 * time.Hour)
+	expiresAt := time.Now().UTC().Add(sessionTTL)
 
 	err := a.store.CreateAnonymousSession(r.Context(), tokenHash, expiresAt)
 	if err != nil {
@@ -55,60 +61,11 @@ func (a *app) setToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cookie := http.Cookie{
-		Name:     CookieName,
-		Value:    token,
-		Path:     "/",
-		Expires:  expiresAt,
-		MaxAge:   int(expiresAt.Sub(time.Now().UTC()).Seconds()),
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-	}
-
-	http.SetCookie(w, &cookie)
+	setSessionCookie(w, token, expiresAt)
 	w.Header().Set("Cache-Control", "no-store")
 	a.logger.InfoContext(r.Context(), "cookie set successfully", "cookie_name", CookieName, "expires_at", expiresAt)
 	respondWithJSON(w, http.StatusOK, map[string]string{
 		"details": "Cookie set successfully",
-	})
-
-	return
-}
-
-func (a *app) updateToken(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie(CookieName)
-	if err != nil {
-		respondWithError(w, http.StatusUnauthorized, "Session required", "A valid session cookie is required")
-		return
-	}
-
-	token, tokenHash := newSessionToken()
-	expiresAt := time.Now().UTC().Add(15 * 24 * time.Hour)
-	err = a.store.UpdateToken(r.Context(), hashSession(cookie.Value), tokenHash, expiresAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		respondWithError(w, http.StatusUnauthorized, "Invalid or expired session", "Create a new session to continue")
-		return
-	}
-	if err != nil {
-		a.logger.ErrorContext(r.Context(), "update session token failed", "err", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to update session token", tryAgainLater)
-		return
-	}
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     CookieName,
-		Value:    token,
-		Path:     "/",
-		Expires:  expiresAt,
-		MaxAge:   int((15 * 24 * time.Hour) / time.Second),
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-	})
-	w.Header().Set("Cache-Control", "no-store")
-	respondWithJSON(w, http.StatusOK, map[string]string{
-		"details": "Session token updated successfully",
 	})
 }
 

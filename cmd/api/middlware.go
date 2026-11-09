@@ -35,7 +35,7 @@ func (a *app) requireSession(next http.Handler) http.Handler {
 			return
 		}
 
-		userID, err := a.store.FetchUserID(r.Context(), hashSession(cookie.Value))
+		userID, expiresAt, err := a.store.FetchSession(r.Context(), hashSession(cookie.Value))
 		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "Invalid session", http.StatusUnauthorized)
 			return
@@ -45,9 +45,41 @@ func (a *app) requireSession(next http.Handler) http.Handler {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
+		a.extendSession(w, r, cookie.Value, expiresAt)
 
 		ctx := context.WithValue(r.Context(), userIDKey{}, userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func (a *app) extendSession(w http.ResponseWriter, r *http.Request, token string, expiresAt time.Time) {
+	now := time.Now().UTC()
+	refreshBefore := now.Add(sessionTTL - sessionRefreshInterval)
+	if !expiresAt.Before(refreshBefore) {
+		return
+	}
+
+	newExpiry := now.Add(sessionTTL)
+	extended, err := a.store.ExtendSession(r.Context(), hashSession(token), newExpiry, refreshBefore)
+	if err != nil {
+		a.logger.WarnContext(r.Context(), "extend session failed", "err", err)
+		return
+	}
+	if extended {
+		setSessionCookie(w, token, newExpiry)
+	}
+}
+
+func setSessionCookie(w http.ResponseWriter, token string, expiresAt time.Time) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     CookieName,
+		Value:    token,
+		Path:     "/",
+		Expires:  expiresAt,
+		MaxAge:   int(time.Until(expiresAt).Seconds()),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 

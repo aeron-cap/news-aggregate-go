@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -301,111 +300,6 @@ func TestSourcesDatabaseErrors(t *testing.T) {
 func sessionTestApp(t *testing.T) (*app, *sql.DB) {
 	t.Helper()
 	return schemaTestApp(t)
-}
-
-func TestUpdateTokenHandler(t *testing.T) {
-	for _, tc := range []struct {
-		name       string
-		cookie     string
-		expired    bool
-		dbFailure  bool
-		wantStatus int
-	}{
-		{name: "renews the same profile", cookie: "original-token", wantStatus: http.StatusOK},
-		{name: "rejects missing cookie", wantStatus: http.StatusUnauthorized},
-		{name: "rejects unknown token", cookie: "unknown-token", wantStatus: http.StatusUnauthorized},
-		{name: "rejects expired token", cookie: "original-token", expired: true, wantStatus: http.StatusUnauthorized},
-		{name: "database failure does not issue a cookie", cookie: "original-token", dbFailure: true, wantStatus: http.StatusInternalServerError},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			a, db := sessionTestApp(t)
-			ctx := context.Background()
-			originalHash := hashSession("original-token")
-			originalExpiry := time.Now().UTC().Truncate(time.Microsecond).Add(time.Hour)
-			if tc.expired {
-				originalExpiry = time.Now().UTC().Truncate(time.Microsecond).Add(-time.Hour)
-			}
-			if err := a.store.CreateAnonymousSession(ctx, originalHash, originalExpiry); err != nil {
-				t.Fatal(err)
-			}
-			var originalID uuid.UUID
-			if err := db.QueryRow(`SELECT id FROM users WHERE token = $1`, originalHash).Scan(&originalID); err != nil {
-				t.Fatal(err)
-			}
-			if tc.dbFailure {
-				if err := db.Close(); err != nil {
-					t.Fatal(err)
-				}
-			}
-
-			r := httptest.NewRequest(http.MethodPost, "/update-token", nil)
-			if tc.cookie != "" {
-				r.AddCookie(&http.Cookie{Name: CookieName, Value: tc.cookie})
-			}
-			w := httptest.NewRecorder()
-			routes(a).ServeHTTP(w, r)
-			if w.Code != tc.wantStatus {
-				t.Fatalf("status = %d, want %d; body: %s", w.Code, tc.wantStatus, w.Body.String())
-			}
-			cookies := w.Result().Cookies()
-			if tc.wantStatus != http.StatusOK {
-				if len(cookies) != 0 {
-					t.Fatal("failed renewal issued a cookie")
-				}
-				if !tc.dbFailure {
-					var token string
-					var expiry time.Time
-					if err := db.QueryRow(`SELECT token, expires_at FROM users WHERE id = $1`, originalID).Scan(&token, &expiry); err != nil {
-						t.Fatal(err)
-					}
-					if token != originalHash || !expiry.Equal(originalExpiry) {
-						t.Fatal("failed renewal changed the session")
-					}
-				}
-				return
-			}
-
-			if len(cookies) != 1 {
-				t.Fatalf("cookie count = %d, want 1", len(cookies))
-			}
-			cookie := cookies[0]
-			if cookie.Name != CookieName || cookie.Value == "" || cookie.Value == tc.cookie {
-				t.Fatal("renewal did not issue a replacement session token")
-			}
-			if cookie.Path != "/" || !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteLaxMode {
-				t.Fatalf("unexpected cookie attributes: %+v", cookie)
-			}
-			if cookie.MaxAge != 15*24*60*60 || !cookie.Expires.After(time.Now().UTC().Truncate(time.Microsecond).Add(14*24*time.Hour)) {
-				t.Fatal("replacement cookie does not have the expected lifetime")
-			}
-			if _, err := a.store.FetchUserID(ctx, originalHash); !errors.Is(err, sql.ErrNoRows) {
-				t.Fatalf("old token lookup = %v, want sql.ErrNoRows", err)
-			}
-			if id, err := a.store.FetchUserID(ctx, hashSession(cookie.Value)); err != nil || id != originalID {
-				t.Fatalf("replacement token lookup = (%d, %v), want (1, nil)", id, err)
-			}
-			var count int
-			if err := db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count); err != nil || count != 1 {
-				t.Fatalf("user count = (%d, %v), want (1, nil)", count, err)
-			}
-
-			// Replaying the old cookie cannot rotate the new token again.
-			replay := httptest.NewRecorder()
-			routes(a).ServeHTTP(replay, r)
-			if replay.Code != http.StatusUnauthorized || len(replay.Result().Cookies()) != 0 {
-				t.Fatal("old cookie was accepted after rotation")
-			}
-		})
-	}
-}
-
-func TestUpdateTokenRouteRejectsGET(t *testing.T) {
-	a, _ := sessionTestApp(t)
-	w := httptest.NewRecorder()
-	routes(a).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/update-token", nil))
-	if w.Code != http.StatusMethodNotAllowed || len(w.Result().Cookies()) != 0 {
-		t.Fatalf("GET status = %d, want 405 without a cookie", w.Code)
-	}
 }
 
 func TestSetTokenReusesExistingProfile(t *testing.T) {
