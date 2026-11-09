@@ -49,6 +49,7 @@
   text-decoration: none;
 }
 
+.page-navigation a[href='#/legal'] { margin-left: auto; }
 .page-navigation a:hover { color: #414d40; }
 .page-navigation a[aria-current='page'] {
   border-bottom-color: #506456;

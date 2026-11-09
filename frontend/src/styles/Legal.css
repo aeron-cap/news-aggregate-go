@@ -1,0 +1,22 @@
+.legal-content { display: flex; flex-direction: column; padding-bottom: 8px; }
+.legal-content section { width: min(100%, 420px); padding: 18px 0; border-top: 1px solid #deddd5; }
+.legal-content section:first-child { border-top: 0; padding-top: 0; }
+.legal-content section:nth-child(even) { align-self: flex-end; text-align: right; }
+.legal-content h3 { margin: 0 0 10px; font: 500 20px/1.35 Georgia, 'Times New Roman', serif; }
+.legal-content p { margin: 0 0 10px; color: #414d40; font-size: 14px; line-height: 1.7; }
+.legal-content p:last-child { margin-bottom: 0; }
+.legal-content a { color: #506456; text-underline-offset: 3px; }
+.legal-content a:hover { color: #414d40; }
+.legal-content code { padding: 1px 4px; border-radius: 3px; background: #ecebe3; font-size: 12px; }
+
+.newspaper-footer a { color: inherit; text-underline-offset: 3px; }
+.newspaper-footer a:hover { color: #414d40; }
+
+.footer-brand { display: flex; align-items: center; gap: 10px; }
+.github-star { display: inline-flex; align-items: center; min-height: 20px; }
+
+@media (max-width: 640px) {
+  .legal-content section { width: 85%; }
+  .legal-content h3 { font-size: 18px; }
+  .legal-content p { font-size: 13px; }
+}

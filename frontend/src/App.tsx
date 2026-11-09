@@ -2,14 +2,18 @@ import { useEffect, useState } from 'react'
 import Interests from './components/Interests'
 import NewsPaper from './components/NewsPaper'
 import Sources from './components/Sources'
+import Legal from './components/Legal'
+import GitHubStar from './components/GitHubStar'
 import './styles/NewsPaper.css'
 import './styles/Interests.css'
 import './styles/Sources.css'
+import './styles/Legal.css'
 
-type Page = 'feed' | 'interests' | 'sources'
+type Page = 'feed' | 'interests' | 'sources' | 'legal'
 
 function currentPage(): Page {
   if (window.location.hash === '#/sources') return 'sources'
+  if (window.location.hash === '#/legal') return 'legal'
   return window.location.hash === '#/interests' ? 'interests' : 'feed'
 }
 
@@ -48,6 +52,7 @@ function App() {
         <a href="#/" aria-current={page === 'feed' ? 'page' : undefined}>Feed</a>
         <a href="#/interests" aria-current={page === 'interests' ? 'page' : undefined}>Interests</a>
         <a href="#/sources" aria-current={page === 'sources' ? 'page' : undefined}>Sources</a>
+        <a href="#/legal" aria-current={page === 'legal' ? 'page' : undefined}>Legal</a>
       </nav>
 
       <div hidden={page !== 'feed'}>
@@ -59,10 +64,16 @@ function App() {
       <div hidden={page !== 'sources'}>
         {visitedPages.has('sources') && <Sources />}
       </div>
+      <div hidden={page !== 'legal'}>
+        {visitedPages.has('legal') && <Legal />}
+      </div>
 
       <footer className="newspaper-footer">
-        <span>PocketNews</span>
-        <span>Good stories, less noise.</span>
+        <span className="footer-brand">
+          PocketNews
+          <GitHubStar />
+        </span>
+        <span>Good stories, less noise. · <a href="#/legal">Legal &amp; disclaimer</a></span>
       </footer>
     </div>
   )
