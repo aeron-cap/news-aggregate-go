@@ -51,3 +51,20 @@ func TestSortByWeightedScoreTieBreaks(t *testing.T) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 }
+
+func TestLimitAuthorsKeepsBlankAuthors(t *testing.T) {
+	blanks := []string{"", " ", "  ", "\t", " \n "}
+	for n := 1; n <= 8; n++ {
+		articles := make([]Article, n)
+		for i := range articles {
+			articles[i] = Article{
+				Link:          fmt.Sprintf("https://example.com/%d", i),
+				Authors:       []Person{{Name: blanks[i%len(blanks)]}},
+				WeightedScore: float64(i % 3),
+			}
+		}
+		if got := limitAuthors(1, articles); len(got) != n {
+			t.Fatalf("limitAuthors(1, %d blank-author articles) kept %d", n, len(got))
+		}
+	}
+}

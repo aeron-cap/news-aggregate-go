@@ -98,7 +98,7 @@ func limitAuthors(perAuthor int, articles []Article) []Article {
 	seen := map[string]int{}
 	limited := []Article{}
 	for _, article := range articles {
-		if len(article.Authors) == 0 {
+		if len(article.Authors) == 0 || strings.TrimSpace(article.Authors[0].Name) == "" {
 			limited = append(limited, article)
 			continue
 		}
