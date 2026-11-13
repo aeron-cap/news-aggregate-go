@@ -92,21 +92,28 @@ func filterOldArticles(articles []Article, years, month, days int) []Article {
 	return filtered
 }
 
-func limitAuthors(perAuthor int, articles []Article) []Article {
+func dedupeLinksAndAuthors(perAuthor int, articles []Article) []Article {
 	articles = sortByWeightedScore("desc", articles)
 
-	seen := map[string]int{}
+	seenLinks := map[string]bool{}
+	seenAuthors := map[string]int{}
 	limited := []Article{}
 	for _, article := range articles {
-		if len(article.Authors) == 0 || strings.TrimSpace(article.Authors[0].Name) == "" {
-			limited = append(limited, article)
+		if seenLinks[article.Link] {
 			continue
 		}
-		key := strings.ToLower(strings.TrimSpace(article.Authors[0].Name))
-		if seen[key] < perAuthor {
-			seen[key]++
-			limited = append(limited, article)
+		key := ""
+		if len(article.Authors) > 0 {
+			key = strings.ToLower(strings.TrimSpace(article.Authors[0].Name))
 		}
+		if key != "" && seenAuthors[key] >= perAuthor {
+			continue
+		}
+		seenLinks[article.Link] = true
+		if key != "" {
+			seenAuthors[key]++
+		}
+		limited = append(limited, article)
 	}
 
 	return limited

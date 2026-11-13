@@ -52,7 +52,7 @@ func TestSortByWeightedScoreTieBreaks(t *testing.T) {
 	}
 }
 
-func TestLimitAuthorsKeepsBlankAuthors(t *testing.T) {
+func TestDedupeLinksAndAuthorsKeepsBlankAuthors(t *testing.T) {
 	blanks := []string{"", " ", "  ", "\t", " \n "}
 	for n := 1; n <= 8; n++ {
 		articles := make([]Article, n)
@@ -63,13 +63,13 @@ func TestLimitAuthorsKeepsBlankAuthors(t *testing.T) {
 				WeightedScore: float64(i % 3),
 			}
 		}
-		if got := limitAuthors(1, articles); len(got) != n {
-			t.Fatalf("limitAuthors(1, %d blank-author articles) kept %d", n, len(got))
+		if got := dedupeLinksAndAuthors(1, articles); len(got) != n {
+			t.Fatalf("dedupeLinksAndAuthors(1, %d blank-author articles) kept %d", n, len(got))
 		}
 	}
 }
 
-func TestLimitAuthorsTrimsNames(t *testing.T) {
+func TestDedupeLinksAndAuthorsTrimsNames(t *testing.T) {
 	names := []string{"Dan Luu", "dan luu", "a", "Ünïcode Author"}
 	paddings := []string{" ", "  ", "\t", "\n", " \t\n"}
 	for _, name := range names {
@@ -79,9 +79,38 @@ func TestLimitAuthorsTrimsNames(t *testing.T) {
 				{Link: "https://example.com/2", Authors: []Person{{Name: pad + name + pad}}, WeightedScore: 2},
 				{Link: "https://example.com/3", Authors: []Person{{Name: name + pad}}, WeightedScore: 0.5},
 			}
-			if got := limitAuthors(1, articles); len(got) != 1 {
+			if got := dedupeLinksAndAuthors(1, articles); len(got) != 1 {
 				t.Fatalf("name %q with padding %q counted as %d authors", name, pad, len(got))
 			}
+		}
+	}
+}
+
+func TestDedupeLinksAndAuthorsMatchesGetFeedOrder(t *testing.T) {
+	cases := []struct {
+		articles []Article
+		want     []string
+	}{
+		{
+			articles: []Article{
+				{Link: "L", Authors: []Person{{Name: "Z"}}, WeightedScore: 3},
+				{Link: "L", Authors: []Person{{Name: "X"}}, WeightedScore: 2},
+				{Link: "M", Authors: []Person{{Name: "X"}}, WeightedScore: 1},
+			},
+			want: []string{"L", "M"},
+		},
+		{
+			articles: []Article{
+				{Link: "K", Authors: []Person{{Name: "X"}}, WeightedScore: 4},
+				{Link: "L", Authors: []Person{{Name: "X"}}, WeightedScore: 3},
+				{Link: "L", Authors: []Person{{Name: "Y"}}, WeightedScore: 2},
+			},
+			want: []string{"K", "L"},
+		},
+	}
+	for _, tc := range cases {
+		if got := links(dedupeLinksAndAuthors(1, tc.articles)); !slices.Equal(got, tc.want) {
+			t.Fatalf("got %v, want %v", got, tc.want)
 		}
 	}
 }
