@@ -1,0 +1,116 @@
+package feed
+
+import (
+	"fmt"
+	"math/rand"
+	"slices"
+	"testing"
+	"time"
+)
+
+func links(articles []Article) []string {
+	out := make([]string, len(articles))
+	for i, article := range articles {
+		out[i] = article.Link
+	}
+	return out
+}
+
+func TestGiveTopArticlesIgnoresInputOrder(t *testing.T) {
+	rng := rand.New(rand.NewSource(1))
+	now := time.Now().UTC()
+	scores := []float64{0, 0.25, 0.5}
+	for run := 0; run < 200; run++ {
+		n := 1 + rng.Intn(20)
+		articles := make([]Article, n)
+		for i := range articles {
+			articles[i] = Article{
+				Link:          fmt.Sprintf("https://example.com/%d", i),
+				Date:          now.Add(-time.Duration(rng.Intn(3)) * time.Hour).Format(time.RFC3339),
+				WeightedScore: scores[rng.Intn(len(scores))],
+			}
+		}
+		want := links(giveTopArticles(10, slices.Clone(articles)))
+		shuffled := slices.Clone(articles)
+		rng.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+		if got := links(giveTopArticles(10, shuffled)); !slices.Equal(got, want) {
+			t.Fatalf("run %d: shuffled input picked %v, want %v", run, got, want)
+		}
+	}
+}
+
+func TestSortByWeightedScoreTieBreaks(t *testing.T) {
+	articles := []Article{
+		{Link: "b", Date: "2026-01-01T00:00:00Z", WeightedScore: 1},
+		{Link: "a", Date: "2026-01-01T00:00:00Z", WeightedScore: 1},
+		{Link: "c", Date: "2026-02-01T00:00:00Z", WeightedScore: 1},
+		{Link: "d", Date: "2025-01-01T00:00:00Z", WeightedScore: 2},
+	}
+	got := links(sortByWeightedScore("desc", articles))
+	if want := []string{"d", "c", "a", "b"}; !slices.Equal(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestDedupeLinksAndAuthorsKeepsBlankAuthors(t *testing.T) {
+	blanks := []string{"", " ", "  ", "\t", " \n "}
+	for n := 1; n <= 8; n++ {
+		articles := make([]Article, n)
+		for i := range articles {
+			articles[i] = Article{
+				Link:          fmt.Sprintf("https://example.com/%d", i),
+				Authors:       []Person{{Name: blanks[i%len(blanks)]}},
+				WeightedScore: float64(i % 3),
+			}
+		}
+		if got := dedupeLinksAndAuthors(1, articles); len(got) != n {
+			t.Fatalf("dedupeLinksAndAuthors(1, %d blank-author articles) kept %d", n, len(got))
+		}
+	}
+}
+
+func TestDedupeLinksAndAuthorsTrimsNames(t *testing.T) {
+	names := []string{"Dan Luu", "dan luu", "a", "Ünïcode Author"}
+	paddings := []string{" ", "  ", "\t", "\n", " \t\n"}
+	for _, name := range names {
+		for _, pad := range paddings {
+			articles := []Article{
+				{Link: "https://example.com/1", Authors: []Person{{Name: name}}, WeightedScore: 1},
+				{Link: "https://example.com/2", Authors: []Person{{Name: pad + name + pad}}, WeightedScore: 2},
+				{Link: "https://example.com/3", Authors: []Person{{Name: name + pad}}, WeightedScore: 0.5},
+			}
+			if got := dedupeLinksAndAuthors(1, articles); len(got) != 1 {
+				t.Fatalf("name %q with padding %q counted as %d authors", name, pad, len(got))
+			}
+		}
+	}
+}
+
+func TestDedupeLinksAndAuthorsMatchesGetFeedOrder(t *testing.T) {
+	cases := []struct {
+		articles []Article
+		want     []string
+	}{
+		{
+			articles: []Article{
+				{Link: "L", Authors: []Person{{Name: "Z"}}, WeightedScore: 3},
+				{Link: "L", Authors: []Person{{Name: "X"}}, WeightedScore: 2},
+				{Link: "M", Authors: []Person{{Name: "X"}}, WeightedScore: 1},
+			},
+			want: []string{"L", "M"},
+		},
+		{
+			articles: []Article{
+				{Link: "K", Authors: []Person{{Name: "X"}}, WeightedScore: 4},
+				{Link: "L", Authors: []Person{{Name: "X"}}, WeightedScore: 3},
+				{Link: "L", Authors: []Person{{Name: "Y"}}, WeightedScore: 2},
+			},
+			want: []string{"K", "L"},
+		},
+	}
+	for _, tc := range cases {
+		if got := links(dedupeLinksAndAuthors(1, tc.articles)); !slices.Equal(got, tc.want) {
+			t.Fatalf("got %v, want %v", got, tc.want)
+		}
+	}
+}

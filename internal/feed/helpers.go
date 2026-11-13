@@ -26,19 +26,38 @@ func sortByDate(by string, articles []Article) []Article {
 	return articles
 }
 
+func rankedBefore(a, b Article) bool {
+	if a.WeightedScore != b.WeightedScore {
+		return a.WeightedScore > b.WeightedScore
+	}
+	if a.Date != b.Date {
+		aDate, aErr := time.Parse(time.RFC3339, a.Date)
+		bDate, bErr := time.Parse(time.RFC3339, b.Date)
+		switch {
+		case aErr == nil && bErr == nil:
+			if !aDate.Equal(bDate) {
+				return aDate.After(bDate)
+			}
+		case aErr == nil:
+			return true
+		case bErr == nil:
+			return false
+		default:
+			return a.Date > b.Date
+		}
+	}
+	return a.Link < b.Link
+}
+
 func sortByWeightedScore(by string, articles []Article) []Article {
 	switch by {
-	case "asc":
-		sort.Slice(articles, func(i, j int) bool {
-			return articles[j].WeightedScore > articles[i].WeightedScore
-		})
 	case "desc":
-		sort.Slice(articles, func(i, j int) bool {
-			return articles[j].WeightedScore < articles[i].WeightedScore
+		sort.SliceStable(articles, func(i, j int) bool {
+			return rankedBefore(articles[i], articles[j])
 		})
 	default:
-		sort.Slice(articles, func(i, j int) bool {
-			return articles[j].WeightedScore > articles[i].WeightedScore
+		sort.SliceStable(articles, func(i, j int) bool {
+			return rankedBefore(articles[j], articles[i])
 		})
 	}
 
@@ -73,21 +92,28 @@ func filterOldArticles(articles []Article, years, month, days int) []Article {
 	return filtered
 }
 
-func limitAuthors(perAuthor int, articles []Article) []Article {
+func dedupeLinksAndAuthors(perAuthor int, articles []Article) []Article {
 	articles = sortByWeightedScore("desc", articles)
 
-	seen := map[string]int{}
+	seenLinks := map[string]bool{}
+	seenAuthors := map[string]int{}
 	limited := []Article{}
 	for _, article := range articles {
-		if len(article.Authors) == 0 {
-			limited = append(limited, article)
+		if seenLinks[article.Link] {
 			continue
 		}
-		key := strings.ToLower(article.Authors[0].Name)
-		if seen[key] < perAuthor {
-			seen[key]++
-			limited = append(limited, article)
+		key := ""
+		if len(article.Authors) > 0 {
+			key = strings.ToLower(strings.TrimSpace(article.Authors[0].Name))
 		}
+		if key != "" && seenAuthors[key] >= perAuthor {
+			continue
+		}
+		seenLinks[article.Link] = true
+		if key != "" {
+			seenAuthors[key]++
+		}
+		limited = append(limited, article)
 	}
 
 	return limited

@@ -29,16 +29,7 @@ func BuildFeed(ctx context.Context, store *database.Store, userID uuid.UUID, art
 		article.WeightedScore = weightedScore(article)
 		candidates = append(candidates, article)
 	}
-	candidates = limitAuthors(1, filterOldArticles(candidates, 1, 0, 0))
-	unique := make([]Article, 0, len(candidates))
-	seenURLs := map[string]bool{}
-	for _, article := range candidates {
-		if !seenURLs[article.Link] {
-			seenURLs[article.Link] = true
-			unique = append(unique, article)
-		}
-	}
-	candidates = giveTopArticles(10, unique)
+	candidates = giveTopArticles(10, dedupeLinksAndAuthors(1, filterOldArticles(candidates, 1, 0, 0)))
 	stored := make([]database.Article, 0, len(candidates))
 	for _, article := range candidates {
 		date, err := time.Parse(time.RFC3339, article.Date)
