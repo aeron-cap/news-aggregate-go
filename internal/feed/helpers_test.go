@@ -68,3 +68,20 @@ func TestLimitAuthorsKeepsBlankAuthors(t *testing.T) {
 		}
 	}
 }
+
+func TestLimitAuthorsTrimsNames(t *testing.T) {
+	names := []string{"Dan Luu", "dan luu", "a", "Ünïcode Author"}
+	paddings := []string{" ", "  ", "\t", "\n", " \t\n"}
+	for _, name := range names {
+		for _, pad := range paddings {
+			articles := []Article{
+				{Link: "https://example.com/1", Authors: []Person{{Name: name}}, WeightedScore: 1},
+				{Link: "https://example.com/2", Authors: []Person{{Name: pad + name + pad}}, WeightedScore: 2},
+				{Link: "https://example.com/3", Authors: []Person{{Name: name + pad}}, WeightedScore: 0.5},
+			}
+			if got := limitAuthors(1, articles); len(got) != 1 {
+				t.Fatalf("name %q with padding %q counted as %d authors", name, pad, len(got))
+			}
+		}
+	}
+}

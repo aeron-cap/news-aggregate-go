@@ -102,7 +102,7 @@ func limitAuthors(perAuthor int, articles []Article) []Article {
 			limited = append(limited, article)
 			continue
 		}
-		key := strings.ToLower(article.Authors[0].Name)
+		key := strings.ToLower(strings.TrimSpace(article.Authors[0].Name))
 		if seen[key] < perAuthor {
 			seen[key]++
 			limited = append(limited, article)
